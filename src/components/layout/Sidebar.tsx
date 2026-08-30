@@ -24,17 +24,35 @@ function Brand({ isExpanded }: { isExpanded: boolean }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative h-6 w-24">
-        <Image
-          src="/logo.png"
-          alt="VedaAI Logo"
-          fill
-          className="object-contain object-left"
-          priority
-        />
-      </div>
-    </div>
+//     <div className="flex items-center gap-2">
+//       <div className="relative h-6 w-24">
+//         <Image
+//           src="/logo.png"
+//           alt="VedaAI Logo"
+//           fill
+//           className="object-contain object-left"
+//           priority
+//         />
+      
+//       </div>
+//         <span className="text-2xl font-extrabold tracking-tight text-foreground">
+//   VedaAI
+// </span>
+//     </div>
+<div className="flex items-center gap-1.5">
+  <div className="relative h-8 w-8 shrink-0">
+    <Image
+      src="/logo.png"
+      alt="VedaAI Logo"
+      fill
+      className="object-contain"
+      priority
+    />
+  </div>
+  <span className="text-2xl font-extrabold tracking-tight text-foreground">
+    VedaAI
+  </span>
+</div>
   );
 }
 

@@ -4864,3 +4864,7 @@ C:\Users\amenses-innovation\Desktop\Veda_ai_assignment\processor\src\canonical\n
 
 Node.js v22.23.1
 7:17:13 PM [tsx] change in ./src\canonical\normalizer.ts Rerunning...
+[gemini:env] Loading from: C:\Users\amenses-innovation\Desktop\Veda_ai_assignment\processor\.env.local
+◇ injected env (6) from .env.local // tip: ◈ secrets for agents [www.dotenvx.com]
+[gemini:env] ✅ API Key found: AQ.Ab8RN6LlTqy_...
+veda-processor listening on 10002 allowedOrigin=http://localhost:3000

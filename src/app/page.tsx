@@ -45,13 +45,12 @@ function UploadCard({
   return (
     <div className="flex flex-col w-[386.5px] h-[205px]">
       <label
-        className={`group relative flex w-[386.5px] h-[205px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed bg-background/95 px-6 py-6 transition-all ${
-          error
-            ? 'border-destructive/60'
-            : isDragOver
-              ? 'border-orange bg-orange-soft/40'
-              : 'border-foreground/20 hover:border-orange'
-        }`}
+        className={`group relative flex w-[386.5px] h-[205px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed bg-background/95 px-6 py-6 transition-all ${error
+          ? 'border-destructive/60'
+          : isDragOver
+            ? 'border-orange bg-orange-soft/40'
+            : 'border-foreground/20 hover:border-orange'
+          }`}
         onDragOver={(e) => {
           e.preventDefault()
           setIsDragOver(true)
@@ -139,9 +138,9 @@ function ExtractingView({ stage, error }: { stage: string; error?: string | null
     <div className="flex h-full w-full min-h-0 flex-col items-center justify-center text-center p-4">
       {/* Outer Container: width: 177px; height: 221.4921875px; gap: 15px */}
       <div className="w-[177px] h-[221.49px] flex flex-col items-center justify-between gap-[15px]">
-        
+
         {/* Sparkle Icon: width: 128.154296875px; height: 134.4921875px */}
-        <div className="relative w-[128.15px] h-[134.49px] shrink-0">
+       {/* <div className="relative w-[128.15px] h-[134.49px] shrink-0">
           <Image
             src="/sparkle.png"
             alt="Loading Sparkle"
@@ -150,7 +149,7 @@ function ExtractingView({ stage, error }: { stage: string; error?: string | null
             className="object-contain"
             priority
           />
-        </div>
+        </div> */}
 
         {/* Text Block: width: 177px; height: 72px */}
         <div className="w-[177px] h-[72px] flex flex-col items-center justify-center">
@@ -160,7 +159,7 @@ function ExtractingView({ stage, error }: { stage: string; error?: string | null
           </div>
 
           {/* Subtext */}
-          <p className="mt-1.5 text-xs text-muted-foreground font-medium whitespace-nowrap">
+          <p className="mt-1.5 text-xl text-muted-foreground font-medium whitespace-nowrap">
             {stage === 'error' ? (error ?? 'Something went wrong.') : 'This may take a while'}
           </p>
 
@@ -498,11 +497,10 @@ export default function Page() {
               disabled={!hasValidFiles}
               onClick={handleStartMapping}
               style={{ borderRadius: '64px' }}
-              className={`w-[161px] h-[44px] mt-6 flex items-center justify-center gap-2 border-2 px-5 py-3 text-xs font-bold transition-all shadow-xs ${
-                hasValidFiles
-                  ? 'bg-foreground text-background border-foreground hover:opacity-90 cursor-pointer'
-                  : 'bg-muted text-muted-foreground/70 border-muted-foreground/30 cursor-not-allowed'
-              }`}
+              className={`w-[161px] h-[44px] mt-6 flex items-center justify-center gap-2 border-2 px-5 py-3 text-xs font-bold transition-all shadow-xs ${hasValidFiles
+                ? 'bg-foreground text-background border-foreground hover:opacity-90 cursor-pointer'
+                : 'bg-muted text-muted-foreground/70 border-muted-foreground/30 cursor-not-allowed'
+                }`}
             >
               <span>Start Mapping</span>
               <ArrowRight className="size-3.5" />
