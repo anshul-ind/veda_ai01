@@ -1,20 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import {
-  ArrowLeft,
   ArrowRight,
-  Bell,
-  BookOpen,
   Check,
-  CircleHelp,
-  FileText,
-  LayoutGrid,
-  Menu,
+  Clock,
+  Cloud,
+  MessageSquare,
   Settings,
   Sparkles,
   Upload,
-  UserRound,
   X,
 } from 'lucide-react'
 
@@ -27,125 +23,9 @@ import {
 import { useAppStore } from '@/stores/app-store'
 import type { ExtractionResult } from '@/types/extraction'
 import { ExamReview } from '@/components/exam-review/ExamReview'
+import { AppShell } from '@/components/layout/AppShell'
 
 const PROCESSOR_URL = process.env.NEXT_PUBLIC_PROCESSOR_URL?.replace(/\/$/, '')
-
-const teacherImage =
-  'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-xomLiIQBNNjO2SCf4uwnzwVufACQxv.png'
-
-function Brand() {
-  return (
-    <div className="flex items-center gap-2 text-lg font-bold tracking-tight">
-      <span className="grid size-6 place-items-center rounded-md bg-foreground text-background">
-        <Check className="size-4" strokeWidth={3} />
-      </span>
-      VedaAI
-    </div>
-  )
-}
-
-function Sidebar() {
-  const items = [
-    { label: 'Home', icon: LayoutGrid },
-    { label: 'My Classroom', icon: BookOpen },
-    { label: 'Assignments', icon: FileText },
-    { label: 'Exams', icon: FileText, active: true },
-    { label: 'My Library', icon: BookOpen },
-  ]
-
-  return (
-    <aside className="fixed inset-y-3 left-3 z-10 hidden w-[304px] flex-col items-stretch justify-between rounded-[16px] bg-background p-6 lg:flex">
-      <div className="flex h-[418px] w-[251px] flex-col gap-14">
-        <div className="flex items-center justify-between">
-          <Brand />
-          <span className="text-xs text-muted-foreground">▣</span>
-        </div>
-
-        <button className="flex items-center justify-center gap-2 rounded-full border border-orange bg-foreground px-3 py-2 text-xs font-semibold text-background">
-          <Sparkles className="size-3.5" />
-          AI Teacher&apos;s Toolkit
-        </button>
-
-        <nav className="flex flex-col gap-1">
-          {items.map(({ label, icon: Icon, active }) => (
-            <button
-              key={label}
-              className={`flex items-center gap-2 rounded-md px-2 py-2 text-left text-xs ${
-                active ? 'bg-muted font-semibold text-foreground' : 'text-muted-foreground'
-              }`}
-            >
-              <Icon className="size-3.5" />
-              {label}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      <div className="flex h-[130px] w-[256px] flex-col gap-2">
-        <button className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
-          <Settings className="size-3.5" />
-          Settings
-        </button>
-
-        <div className="rounded-xl bg-muted p-3">
-          <div className="text-xs font-semibold">Delhi Public School</div>
-          <div className="text-[10px] text-muted-foreground">Bokaro Steel City</div>
-        </div>
-      </div>
-    </aside>
-  )
-}
-
-function Topbar() {
-  return (
-    <header className="hidden h-14 w-full items-center justify-between gap-2 rounded-2xl bg-background pl-6 pr-2 shadow-sm lg:flex">
-      <div className="flex items-center gap-3">
-        <ArrowLeft className="size-4 text-muted-foreground" />
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <FileText className="size-3.5" />
-          Exams
-        </div>
-      </div>
-
-      <div className="flex items-center gap-4">
-        <CircleHelp className="size-4" />
-        <div className="relative">
-          <Bell className="size-4" />
-          <span className="absolute -right-1 -top-1 size-1.5 rounded-full bg-orange" />
-        </div>
-        <Sparkles className="size-4" />
-        <div className="flex items-center gap-2 text-xs font-medium">
-          <span className="grid size-6 place-items-center rounded-full bg-muted">
-            <UserRound className="size-4" />
-          </span>
-          Madhur Rastogi
-          <span className="text-muted-foreground">⌄</span>
-        </div>
-      </div>
-    </header>
-  )
-}
-
-function MobileHeader() {
-  return (
-    <header className="flex h-14 items-center justify-between rounded-2xl border border-border bg-background px-4 lg:hidden">
-      <div className="flex items-center gap-3">
-        <ArrowLeft className="size-5" />
-        <Brand />
-      </div>
-      <div className="flex items-center gap-4">
-        <div className="relative">
-          <Bell className="size-5" />
-          <span className="absolute -right-1 -top-1 size-2 rounded-full bg-orange" />
-        </div>
-        <span className="grid size-7 place-items-center rounded-full bg-muted">
-          <UserRound className="size-5" />
-        </span>
-        <Menu className="size-5" />
-      </div>
-    </header>
-  )
-}
 
 function UploadCard({
   type,
@@ -163,14 +43,14 @@ function UploadCard({
   const [isDragOver, setIsDragOver] = useState(false)
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-col w-[386.5px] h-[205px]">
       <label
-        className={`group relative flex min-h-40 cursor-pointer flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed bg-background px-4 py-6 transition ${
+        className={`group relative flex w-[386.5px] h-[205px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed bg-background/95 px-6 py-6 transition-all ${
           error
             ? 'border-destructive/60'
             : isDragOver
               ? 'border-orange bg-orange-soft/40'
-              : 'border-foreground/25 hover:border-orange'
+              : 'border-foreground/20 hover:border-orange'
         }`}
         onDragOver={(e) => {
           e.preventDefault()
@@ -193,79 +73,107 @@ function UploadCard({
           accept=".pdf,.png,.jpg,.jpeg"
           onChange={(event) => {
             const selected = event.target.files?.[0]
-            // reset input to allow re-selecting same file
             event.target.value = ''
             if (selected) onChange(selected)
           }}
         />
 
         {file ? (
-          <>
+          <div className="flex flex-col items-center text-center px-2">
             <button
               type="button"
               onClick={(event) => {
                 event.preventDefault()
                 onClear()
               }}
-              className="absolute right-3 top-3 rounded-full p-1 text-muted-foreground hover:bg-muted"
+              className="absolute right-3 top-3 rounded-full p-1 text-muted-foreground hover:bg-muted transition-colors"
               aria-label={`Remove ${type}`}
             >
-              <X className="size-3.5" />
+              <X className="size-4" />
             </button>
 
-            <Check className="mb-2 size-6 rounded-md bg-orange p-1 text-background" strokeWidth={3} />
+            <div className="flex items-center gap-2 mb-2">
+              <span className="grid size-6 place-items-center rounded bg-orange text-background">
+                <Check className="size-4" strokeWidth={3} />
+              </span>
+              <span className="max-w-[220px] truncate text-sm font-semibold text-foreground">
+                {file.name}
+              </span>
+            </div>
 
-            <span className="max-w-full truncate text-center text-xs font-semibold">{file.name}</span>
-
-            <span className="mt-1 text-[10px] text-muted-foreground">Ready to map</span>
-          </>
+            <span className="text-xs text-muted-foreground font-medium">
+              {(file.size / (1024 * 1024)).toFixed(1)} MB • Ready to map
+            </span>
+          </div>
         ) : (
-          <>
-            <Upload className="mb-2 size-6 rounded-md bg-muted p-1.5 text-foreground" />
-            <span className="text-sm font-semibold">
+          <div className="flex flex-col items-center text-center">
+            <Upload className="mb-2 size-6 rounded bg-muted p-1 text-foreground" />
+            <span className="text-sm font-semibold text-foreground">
               Upload <span className="text-orange">{type}</span>
             </span>
-            <span className="mt-1 text-center text-[10px] text-muted-foreground">
+            <span className="mt-1 text-center text-xs text-muted-foreground">
               Max 20 MiB per file • 35 MiB combined
             </span>
-          </>
+          </div>
         )}
       </label>
-      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-destructive text-center">{error}</p>}
     </div>
   )
 }
 
 function ExtractingView({ stage, error }: { stage: string; error?: string | null }) {
   const stageText: Record<string, string> = {
-    validating: 'Validating documents...',
+    validating: 'Uploading securely...',
     uploading: 'Uploading securely...',
-    waiting_for_files: 'Preparing documents...',
-    extracting_questions: 'Extracting questions...',
-    extracting_answers: 'Extracting answers...',
-    validating_output: 'Validating extraction...',
+    waiting_for_files: 'Uploading securely...',
+    extracting_questions: 'Extracting...',
+    extracting_answers: 'Extracting...',
+    validating_output: 'Extracting...',
     done: 'Extraction complete',
     error: 'Extraction failed',
   }
   const display = stageText[stage] ?? 'Extracting...'
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-1 py-8 sm:px-4 lg:py-9">
-      <div className="flex w-full max-w-3xl flex-col items-center text-center">
-        <div className="flex items-center gap-2 rounded-full bg-orange-soft px-3 py-1.5 text-xs font-semibold text-orange">
-          <Sparkles className="size-3.5 animate-pulse" />
-          {display}
+    <div className="flex h-full w-full min-h-0 flex-col items-center justify-center text-center p-4">
+      {/* Outer Container: width: 177px; height: 221.4921875px; gap: 15px */}
+      <div className="w-[177px] h-[221.49px] flex flex-col items-center justify-between gap-[15px]">
+        
+        {/* Sparkle Icon: width: 128.154296875px; height: 134.4921875px */}
+        <div className="relative w-[128.15px] h-[134.49px] shrink-0">
+          <Image
+            src="/sparkle.png"
+            alt="Loading Sparkle"
+            width={128.15}
+            height={134.49}
+            className="object-contain"
+            priority
+          />
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          {stage === 'error' ? (error ?? 'Something went wrong.') : 'This may take a while'}
-        </p>
-        {stage === 'error' ? null : (
-          <div className="mt-6 flex items-center gap-2">
-            <span className="size-2 animate-bounce rounded-full bg-orange [animation-delay:-0.3s]" />
-            <span className="size-2 animate-bounce rounded-full bg-orange [animation-delay:-0.15s]" />
-            <span className="size-2 animate-bounce rounded-full bg-orange" />
+
+        {/* Text Block: width: 177px; height: 72px */}
+        <div className="w-[177px] h-[72px] flex flex-col items-center justify-center">
+          {/* Status Pill Badge */}
+          <div className="inline-flex items-center justify-center rounded-full bg-orange-soft/90 border border-orange/20 px-3.5 py-1 text-xs font-semibold text-orange shadow-xs">
+            <span>{display}</span>
           </div>
-        )}
-        {stage === 'done' && <p className="mt-4 text-xs text-muted-foreground">Ready for mapping • Sprint 4</p>}
+
+          {/* Subtext */}
+          <p className="mt-1.5 text-xs text-muted-foreground font-medium whitespace-nowrap">
+            {stage === 'error' ? (error ?? 'Something went wrong.') : 'This may take a while'}
+          </p>
+
+          {/* Sequential 3-Dot Loader */}
+          {stage !== 'error' && (
+            <div className="mt-2.5 flex items-center justify-center gap-1.5">
+              <span className="size-2 animate-bounce rounded-full bg-orange [animation-delay:-0.3s]" />
+              <span className="size-2 animate-bounce rounded-full bg-orange [animation-delay:-0.15s]" />
+              <span className="size-2 animate-bounce rounded-full bg-orange" />
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   )
@@ -307,13 +215,11 @@ export default function Page() {
       setQuestionFileError(result.error)
       return
     }
-    // duplicate heuristic
     if (answerFile && isDuplicateFileHeuristic(file, answerFile)) {
       setQuestionFile(file)
       setQuestionFileError('Question Paper and Answer Sheet cannot be the same file.')
       return
     }
-    // total size check
     if (answerFile && file.size + answerFile.size > MAX_TOTAL_UPLOAD_SIZE) {
       setQuestionFile(file)
       setQuestionFileError(null)
@@ -322,11 +228,9 @@ export default function Page() {
     }
     setQuestionFile(file)
     setQuestionFileError(null)
-    // if answer had duplicate error, clear when fixing
     if (answerFileError === 'Question Paper and Answer Sheet cannot be the same file.') {
       setAnswerFileError(null)
     }
-    // clear combined error if now valid
     if (answerFile) {
       const total = validateTotalFileSize(file, answerFile)
       if (total.valid) setSubmissionError(null)
@@ -369,7 +273,6 @@ export default function Page() {
     if (answerFileError === 'Question Paper and Answer Sheet cannot be the same file.') {
       setAnswerFileError(null)
     }
-    // clearing may resolve combined error
     if (answerFile) setSubmissionError(null)
   }
 
@@ -386,7 +289,6 @@ export default function Page() {
     Boolean(questionFile && answerFile && !questionFileError && !answerFileError && !submissionError)
 
   const handleStartMapping = async () => {
-    // re-validate immediately
     setSubmissionError(null)
     setExtractionError(null)
 
@@ -408,19 +310,14 @@ export default function Page() {
       return
     }
 
-    // synchronous extracting switch before network — must be before any await
     console.log('[veda] stage→validating')
     setIsExtracting(true)
     setExtractionStage('validating')
     setExtractionError(null)
 
-    // If processor URL is configured, heavy path goes directly to Render
-    // Otherwise fallback to local /api/upload validation (Sprint 2 dev mode)
     const endpoint = PROCESSOR_URL ? `${PROCESSOR_URL}/extract` : '/api/upload'
     console.log('[veda] fetch start', endpoint)
 
-    // Client-side timeout slightly longer than server PROCESSING_TIMEOUT_MS=120s
-    // Without this, a hung request (CORS, DNS, wrong port, network drop) leaves UI stuck on "Uploading securely..." forever
     const controller = new AbortController()
     const timeoutId = setTimeout(() => {
       console.log('[veda] fetch abort timeout 130s')
@@ -442,7 +339,6 @@ export default function Page() {
       clearTimeout(timeoutId)
       console.log('[veda] fetch resolved', response.status, response.ok)
 
-      // Processor stages are server-side; show extracting while awaiting JSON
       if (PROCESSOR_URL) {
         console.log('[veda] stage→extracting_questions')
         setExtractionStage('extracting_questions')
@@ -459,15 +355,12 @@ export default function Page() {
 
       if (!response.ok || typedData.success !== true) {
         const msg = typeof typedData.error === 'string' ? typedData.error : 'Unable to validate uploaded files.'
-        // Map combined-size / duplicate to correct UI field if processor returns those codes
         if (typedData.code === 'TOTAL_TOO_LARGE') {
           setSubmissionError(msg)
         }
         throw new Error(msg)
       }
 
-      // Sprint 3 processor returns ExtractionResult; local /api/upload returns {files}
-      // For processor, store the full result; for fallback, keep extracting as handoff
       if (PROCESSOR_URL && (typedData as unknown as { data?: unknown }).data) {
         console.log('[veda] stage→validating_output')
         setExtractionStage('validating_output')
@@ -475,11 +368,8 @@ export default function Page() {
         console.log('[veda] stage→done', result.data.questions.length, result.data.answers.length)
         setExtractionResult(result)
         setExtractionStage('done')
-        // Keep isExtracting derived false via stage, but keep files
       } else {
-        // Fallback local validation success — keep isExtracting=true as Sprint 2 handoff
-        // Sprint 3 will hand these files to the Render processing service for Gemini extraction.
-        console.log('[veda] fallback success, keeping extracting')
+        console.log('[veda] fallback success')
       }
     } catch (err) {
       clearTimeout(timeoutId)
@@ -492,7 +382,6 @@ export default function Page() {
         : err instanceof Error
           ? err.message
           : 'Upload failed. Please try again.'
-      // If processor was used, also set extractionError for stage view
       if (PROCESSOR_URL) setExtractionError(message)
       setSubmissionError(message)
     } finally {
@@ -500,132 +389,135 @@ export default function Page() {
     }
   }
 
-  if (extractionStage !== 'idle') {
-    const isError = extractionStage === 'error'
-    const isDone = extractionStage === 'done'
-    return (
-      <main className="min-h-screen overflow-hidden bg-page p-3 text-foreground sm:p-5">
-        <div className="flex min-h-[calc(100vh-24px)] gap-4">
-          <Sidebar />
-          <section className="flex min-w-0 flex-1 flex-col lg:ml-[316px]">
-            <Topbar />
-            <MobileHeader />
-            {isDone && extractionResult ? (
-              <div className="flex h-full w-full flex-col p-2">
-                <ExamReview />
-              </div>
-            ) : (
-              <>
-                <ExtractingView stage={extractionStage} error={extractionError ?? submissionError} />
-                {isError && (
-                  <div className="mx-auto mt-4 flex flex-col items-center gap-3">
-                    <button
-                      onClick={() => {
-                        setExtractionStage('idle')
-                        setExtractionError(null)
-                        setSubmissionError(null)
-                        setIsExtracting(false)
-                      }}
-                      className="rounded-full bg-foreground px-5 py-2 text-xs font-semibold text-background hover:opacity-90"
-                    >
-                      Try Again
-                    </button>
-                    <p className="text-[11px] text-muted-foreground">Files are preserved for retry</p>
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-        </div>
-      </main>
-    )
-  }
-
-  // Fallback for legacy isExtracting (Sprint 2)
-  if (isExtracting) {
-    return (
-      <main className="min-h-screen overflow-hidden bg-page p-3 text-foreground sm:p-5">
-        <div className="flex min-h-[calc(100vh-24px)] gap-4">
-          <Sidebar />
-          <section className="flex min-w-0 flex-1 flex-col lg:ml-[316px]">
-            <Topbar />
-            <MobileHeader />
-            <ExtractingView stage={extractionStage} error={extractionError} />
-          </section>
-        </div>
-      </main>
-    )
-  }
-
   return (
-    <main className="min-h-screen overflow-hidden bg-page p-3 text-foreground sm:p-5">
-      <div className="flex min-h-[calc(100vh-24px)] gap-4">
-        <Sidebar />
+    <AppShell>
+      {extractionStage !== 'idle' ? (
+        extractionStage === 'done' && extractionResult ? (
+          <ExamReview />
+        ) : (
+          <div className="h-full flex flex-col justify-center items-center">
+            <ExtractingView stage={extractionStage} error={extractionError ?? submissionError} />
+            {extractionStage === 'error' && (
+              <div className="mt-4 flex flex-col items-center gap-2">
+                <button
+                  onClick={() => {
+                    setExtractionStage('idle')
+                    setExtractionError(null)
+                    setSubmissionError(null)
+                    setIsExtracting(false)
+                  }}
+                  className="rounded-full bg-foreground px-5 py-2 text-xs font-semibold text-background hover:opacity-90 transition-opacity"
+                >
+                  Try Again
+                </button>
+                <p className="text-[11px] text-muted-foreground">Files are preserved for retry</p>
+              </div>
+            )}
+          </div>
+        )
+      ) : (
+        /* PAGE 1: EXAMS UPLOAD SCREEN (Exact Figma Specifications) */
+        <div className="h-full flex flex-col items-center justify-center px-4 py-2 my-auto">
+          <div className="flex flex-col items-center text-center">
 
-        <section className="flex min-w-0 flex-1 flex-col lg:ml-[316px]">
-          <Topbar />
-          <MobileHeader />
-
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-1 py-8 sm:px-4 lg:py-9">
-            <div className="flex w-full max-w-3xl flex-col items-center text-center">
-              <h1 className="text-balance text-xl font-bold tracking-tight sm:whitespace-nowrap sm:text-3xl">
-                Upload{' '}
-                <span className="rounded-md bg-orange-soft px-1 text-orange">
+            {/* 1. HEADING BLOCK (w: 755px, h: 56px, gap: 12px) */}
+            <div className="w-[755px] max-w-full h-[56px] flex items-center justify-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <span>Upload</span>
+                <span className="rounded-xl bg-orange-soft px-3 py-1 text-orange inline-block">
                   Question Paper &amp; Answer Sheets
                 </span>
               </h1>
+            </div>
 
-              <p className="mt-2 text-xs text-muted-foreground">Upload both files to get started</p>
+            {/* 2. SUBTEXT (w: 269px, h: 28px, gap: 2px) */}
+            <div className="w-[269px] max-w-full h-[28px] mt-1 flex items-center justify-center">
+              <p className="text-sm font-medium text-muted-foreground">
+                Upload both files to get started
+              </p>
+            </div>
 
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={teacherImage}
-                alt="AI teacher illustration"
-                className="mx-auto my-5 size-20 object-contain sm:size-24"
-              />
+            {/* 3. TUTOR ILLUSTRATION (w: 137.03px, h: 138.03px, padding: 13.2px 12px) */}
+            <div className="relative w-[137.03px] h-[138.03px] my-4 flex items-center justify-center">
+              {/* Soft Peach Circular Glow Ring */}
+              <div className="absolute inset-0 rounded-full bg-orange-soft/70 border border-orange/20 shadow-xs" />
 
-              {submissionError && (
-                <div className="mb-4 w-full max-w-3xl rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {submissionError}
-                </div>
-              )}
-
-              <div className="mx-auto w-full rounded-[24px] border border-border bg-background p-3 shadow-[0_12px_30px_rgba(15,15,15,0.10)] sm:p-3 xl:h-[205px] xl:w-[789px]">
-                <div className="grid h-full grid-cols-1 gap-2 sm:grid-cols-2">
-                  <UploadCard
-                    type="Question Paper"
-                    file={questionFile}
-                    error={questionFileError}
-                    onChange={handleQuestionSelect}
-                    onClear={handleQuestionClear}
-                  />
-
-                  <UploadCard
-                    type="Answer Sheet"
-                    file={answerFile}
-                    error={answerFileError}
-                    onChange={handleAnswerSelect}
-                    onClear={handleAnswerClear}
-                  />
-                </div>
+              {/* Tutor Illustration Image */}
+              <div className="relative z-10 p-[12px]">
+                <Image
+                  src="/assets/exams/tutor-illustration.png"
+                  alt="Tutor illustration"
+                  width={113}
+                  height={113}
+                  className="object-contain"
+                />
               </div>
 
-              <button
-                disabled={!hasValidFiles}
-                onClick={handleStartMapping}
-                className="mx-auto mt-7 flex items-center gap-2 rounded-full bg-foreground px-5 py-3 text-xs font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted-foreground/40 disabled:text-background/70"
-              >
-                Start Mapping
-                <ArrowRight className="size-4" />
-              </button>
+              {/* 4 Corner Icon Badges */}
+              <div className="absolute -top-1 -left-1 z-20 grid size-6 place-items-center rounded-full bg-background border border-orange/30 shadow-xs">
+                <Clock className="size-3 text-orange" />
+              </div>
+              <div className="absolute -top-1 -right-1 z-20 grid size-6 place-items-center rounded-full bg-background border border-orange/30 shadow-xs">
+                <MessageSquare className="size-3 text-orange" />
+              </div>
+              <div className="absolute -bottom-1 -left-1 z-20 grid size-6 place-items-center rounded-full bg-background border border-orange/30 shadow-xs">
+                <Settings className="size-3 text-orange" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 z-20 grid size-6 place-items-center rounded-full bg-background border border-orange/30 shadow-xs">
+                <Cloud className="size-3 text-orange" />
+              </div>
+            </div>
 
-              <p className="mt-5 text-[10px] text-muted-foreground sm:text-xs">
+            {submissionError && (
+              <div className="mb-3 w-[789px] max-w-full rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+                {submissionError}
+              </div>
+            )}
+
+            {/* 4. UPLOAD CARDS CONTAINER (w: 789px, h: 205px, gap: 16px) */}
+            <div className="w-[789px] max-w-full h-[205px] flex items-center justify-between gap-[16px]">
+              <UploadCard
+                type="Question Paper"
+                file={questionFile}
+                error={questionFileError}
+                onChange={handleQuestionSelect}
+                onClear={handleQuestionClear}
+              />
+
+              <UploadCard
+                type="Answer Sheet"
+                file={answerFile}
+                error={answerFileError}
+                onChange={handleAnswerSelect}
+                onClear={handleAnswerClear}
+              />
+            </div>
+
+            {/* 5. START MAPPING BUTTON (w: 161px, h: 44px, border-radius: 64px, gap: 8px) */}
+            <button
+              disabled={!hasValidFiles}
+              onClick={handleStartMapping}
+              style={{ borderRadius: '64px' }}
+              className={`w-[161px] h-[44px] mt-6 flex items-center justify-center gap-2 border-2 px-5 py-3 text-xs font-bold transition-all shadow-xs ${
+                hasValidFiles
+                  ? 'bg-foreground text-background border-foreground hover:opacity-90 cursor-pointer'
+                  : 'bg-muted text-muted-foreground/70 border-muted-foreground/30 cursor-not-allowed'
+              }`}
+            >
+              <span>Start Mapping</span>
+              <ArrowRight className="size-3.5" />
+            </button>
+
+            {/* 6. HELPER TEXT (w: 410px, h: 22px) */}
+            <div className="w-[410px] max-w-full h-[22px] mt-2 flex items-center justify-center">
+              <p className="text-xs font-normal text-muted-foreground">
                 Once both files are uploaded, you&apos;ll be able to map answers with questions
               </p>
             </div>
+
           </div>
-        </section>
-      </div>
-    </main>
+        </div>
+      )}
+    </AppShell>
   )
 }

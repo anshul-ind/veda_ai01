@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { validateUploadPair } from "../validation/upload.js";
 import { ProcessorError, toErrorResponse } from "../utils/errors.js";
-import { uploadToGemini, pollUntilActive, deleteGeminiFileBestEffort } from "../gemini/files.js";
+import { uploadToGemini, pollUntilActive } from "../gemini/files.js";
 import { extractAnswers, extractQuestions } from "../gemini/extract.js";
 import { answerPayloadSchema, questionPayloadSchema, type Answer, type QuestionContext } from "../extraction/schema.js";
 import { GEMINI_MODEL, PROCESSING_TIMEOUT_MS, EXTRACTION_PROMPT_VERSION, EXTRACTION_SCHEMA_VERSION } from "../config.js";
@@ -60,9 +60,11 @@ extractRoute.post("/extract", async (c) => {
     await pollUntilActive(aUp.name, { signal: controller.signal });
     logAudit("polling_active", { question: qUp.name, answer: aUp.name });
 
-    // Extract questions
+    // Extract questions with resilience
     logAudit("questions_extract_start", { uri: qUp.uri, mimeType: qUp.mimeType, model: GEMINI_MODEL });
-    const qRaw = await extractQuestions(qUp.uri, qUp.mimeType, controller.signal);
+    const { parsed: qRaw, modelUsed: qModel } = await extractQuestions(qUp.uri, qUp.mimeType, controller.signal);
+    logAudit("questions_extract_success", { modelUsed: qModel });
+
     const qParsed = questionPayloadSchema.safeParse(qRaw);
     if (!qParsed.success) {
       throw new ProcessorError("SCHEMA_VALIDATION_FAILED", 502, "Question extraction schema validation failed.", [qParsed.error.issues[0]?.message ?? "Invalid question output."]);
@@ -77,11 +79,13 @@ extractRoute.post("/extract", async (c) => {
       questionText,
       maxMarks,
     }));
-    logAudit("questions_validated", { count: questionContext.length, model: GEMINI_MODEL, promptVersion: EXTRACTION_PROMPT_VERSION });
+    logAudit("questions_validated", { count: questionContext.length, modelUsed: qModel, promptVersion: EXTRACTION_PROMPT_VERSION });
 
-    // Extract answers
+    // Extract answers with resilience
     logAudit("answers_extract_start", { uri: aUp.uri, mimeType: aUp.mimeType, model: GEMINI_MODEL, contextCount: questionContext.length });
-    const aRaw = await extractAnswers(aUp.uri, aUp.mimeType, questionContext, controller.signal);
+    const { parsed: aRaw, modelUsed: aModel } = await extractAnswers(aUp.uri, aUp.mimeType, questionContext, controller.signal);
+    logAudit("answers_extract_success", { modelUsed: aModel });
+
     const aParsed = answerPayloadSchema.safeParse(aRaw);
     if (!aParsed.success) throw new ProcessorError("SCHEMA_VALIDATION_FAILED", 502, "Answer extraction schema validation failed.");
 
@@ -106,7 +110,7 @@ extractRoute.post("/extract", async (c) => {
       throw new ProcessorError("SCHEMA_VALIDATION_FAILED", 502, "Answer extraction returned no mapped answers for a non-empty document.", warnings);
     }
 
-    // Sprint 4: Build Canonical Questions & Answer Blocks
+    // Build Canonical Questions & Answer Blocks
     const canonicalQuestions = buildCanonicalQuestions(qParsed.data.questions);
     const canonicalAnswerBlocks = segmentAnswers(
       answers,
@@ -114,7 +118,7 @@ extractRoute.post("/extract", async (c) => {
       [...(qParsed.data.blocks ?? []), ...(aParsed.data.blocks ?? [])]
     );
 
-    // Sprint 5: Deterministic Mapping Engine
+    // Deterministic Mapping Engine
     const { mappings } = mapQuestionsToAnswers(canonicalQuestions, canonicalAnswerBlocks);
     logAudit("canonical_mapped", {
       canonicalQuestionsCount: canonicalQuestions.length,
@@ -123,6 +127,8 @@ extractRoute.post("/extract", async (c) => {
       matchedCount: mappings.filter((m) => m.status === "matched").length,
       uncertainCount: mappings.filter((m) => m.status === "uncertain").length,
       unansweredCount: mappings.filter((m) => m.status === "unanswered").length,
+      questionModelUsed: qModel,
+      answerModelUsed: aModel,
     });
 
     const includeRaw = process.env.INCLUDE_RAW === "true";
@@ -142,7 +148,8 @@ extractRoute.post("/extract", async (c) => {
         },
         mappings,
         metadata: {
-          model: GEMINI_MODEL,
+          model: qModel,
+          answerModel: aModel,
           processedAt: new Date().toISOString(),
           extractionVersion: EXTRACTION_SCHEMA_VERSION,
         },
@@ -158,7 +165,7 @@ extractRoute.post("/extract", async (c) => {
         : {}),
     };
 
-    logAudit("complete", { questions: qParsed.data.questions.length, answers: answers.length, mappings: mappings.length, warnings: warnings.length, model: GEMINI_MODEL });
+    logAudit("complete", { questions: qParsed.data.questions.length, answers: answers.length, mappings: mappings.length, modelUsed: qModel });
 
     return c.json(result, 200);
   } catch (e) {
@@ -166,7 +173,7 @@ extractRoute.post("/extract", async (c) => {
     if (controller.signal.aborted && err.status === 500) {
       return c.json({ success: false, code: "PROCESSING_TIMEOUT", error: "Processing deadline exceeded." }, 504);
     }
-    return c.json(err.body, err.status as 400 | 413 | 415 | 429 | 500 | 502 | 504);
+    return c.json(err.body, err.status as 400 | 413 | 415 | 429 | 500 | 502 | 503 | 504);
   } finally {
     clearTimeout(timeout);
   }

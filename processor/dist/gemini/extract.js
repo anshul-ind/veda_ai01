@@ -1,7 +1,8 @@
 import { getGeminiClient } from "./client.js";
 import { ProcessorError } from "../utils/errors.js";
 import { ANSWER_EXTRACTION_PROMPT, QUESTION_EXTRACTION_PROMPT, } from "../extraction/prompts.js";
-import { GEMINI_MODEL } from "../config.js";
+import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL } from "../config.js";
+import { executeWithResilience } from "./resilience.js";
 /**
  * Normalizes bounding box coordinates to { x, y, width, height }
  * guaranteed to be within [0, 1] bounds as required by normalizedRegionSchema.
@@ -24,18 +25,11 @@ function normalizeRegion(r) {
         height: Number(height.toFixed(4)),
     };
 }
-/**
- * Logs raw Gemini output before JSON parsing.
- * This is required for Sprint 3 debugging and validation.
- */
 function logRawOutput(documentType, raw) {
     console.log(`\n========== GEMINI RAW ${documentType.toUpperCase()} OUTPUT ==========`);
     console.log(raw);
     console.log(`========== END RAW ${documentType.toUpperCase()} OUTPUT ==========\n`);
 }
-/**
- * Removes markdown code fences if Gemini returns ```json ... ```
- */
 function cleanGeminiJson(raw) {
     const trimmed = raw.trim();
     if (trimmed.startsWith("```json") || trimmed.startsWith("```JSON")) {
@@ -52,9 +46,6 @@ function cleanGeminiJson(raw) {
     }
     return trimmed;
 }
-/**
- * Parses Gemini text output into JSON.
- */
 function parseGeminiJson(raw, documentType) {
     if (!raw.trim()) {
         throw new ProcessorError("MODEL_OUTPUT_INVALID", 502, `Gemini returned an empty ${documentType} extraction response.`);
@@ -66,13 +57,9 @@ function parseGeminiJson(raw, documentType) {
     catch (error) {
         console.error(`[gemini:${documentType}] Failed to parse JSON.`);
         console.error(`[gemini:${documentType}] Parse error:`, error);
-        console.error(`[gemini:${documentType}] Raw response:`, cleaned);
         throw new ProcessorError("MODEL_OUTPUT_INVALID", 502, `Gemini returned invalid JSON for ${documentType} extraction.`);
     }
 }
-/**
- * Ensures that the uploaded Gemini file has the required URI.
- */
 function validateFileReference(fileUri, mimeType, documentType) {
     if (!fileUri?.trim()) {
         throw new ProcessorError("INVALID_REQUEST", 400, `Missing Gemini file URI for ${documentType} extraction.`);
@@ -82,7 +69,7 @@ function validateFileReference(fileUri, mimeType, documentType) {
     }
 }
 /**
- * Extract structured question data from a question paper.
+ * Extract structured question data with resilience (retry + fallback chain).
  */
 export async function extractQuestions(fileUri, mimeType, signal) {
     validateFileReference(fileUri, mimeType, "question");
@@ -90,13 +77,12 @@ export async function extractQuestions(fileUri, mimeType, signal) {
         throw new ProcessorError("PROCESSING_TIMEOUT", 504, "Question extraction was aborted.");
     }
     const client = getGeminiClient();
-    console.log("[gemini:questions] Starting extraction");
-    console.log("[gemini:questions] Model:", GEMINI_MODEL);
-    console.log("[gemini:questions] MIME type:", mimeType);
-    console.log("[gemini:questions] File URI:", fileUri);
-    try {
+    console.log("[gemini:questions] Starting extraction pipeline with resilience");
+    console.log("[gemini:questions] Primary Model:", GEMINI_MODEL);
+    console.log("[gemini:questions] Fallback Model:", GEMINI_FALLBACK_MODEL);
+    const { result: rawText, modelUsed } = await executeWithResilience(async (modelToUse) => {
         const response = await client.models.generateContent({
-            model: GEMINI_MODEL,
+            model: modelToUse,
             contents: [
                 {
                     role: "user",
@@ -144,53 +130,45 @@ export async function extractQuestions(fileUri, mimeType, signal) {
         if (signal?.aborted) {
             throw new ProcessorError("PROCESSING_TIMEOUT", 504, "Question extraction was aborted.");
         }
-        const raw = response.text ?? "";
-        logRawOutput("question", raw);
-        const parsed = parseGeminiJson(raw, "question");
-        if (parsed && typeof parsed === "object") {
-            if (Array.isArray(parsed.blocks)) {
-                parsed.blocks = parsed.blocks.map((b) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
-            }
-            if (Array.isArray(parsed.labels)) {
-                parsed.labels = parsed.labels.map((l) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
-            }
-            if (Array.isArray(parsed.regions)) {
-                parsed.regions = parsed.regions.map((r) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
-            }
+        return response.text ?? "";
+    }, {
+        primaryModel: GEMINI_MODEL,
+        fallbackModel: GEMINI_FALLBACK_MODEL,
+        signal,
+    });
+    logRawOutput("question", rawText);
+    const parsed = parseGeminiJson(rawText, "question");
+    if (parsed && typeof parsed === "object") {
+        if (Array.isArray(parsed.blocks)) {
+            parsed.blocks = parsed.blocks.map((b) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
         }
-        return parsed;
-    }
-    catch (error) {
-        if (error instanceof ProcessorError) {
-            throw error;
+        if (Array.isArray(parsed.labels)) {
+            parsed.labels = parsed.labels.map((l) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
         }
-        console.error("[gemini:questions] Extraction failed:", error);
-        throw new ProcessorError("GEMINI_REQUEST_FAILED", 502, "Failed to extract structured data from the question document.");
+        if (Array.isArray(parsed.regions)) {
+            parsed.regions = parsed.regions.map((r) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
+        }
     }
+    return { parsed, modelUsed };
 }
 /**
- * Extract structured answer data from an answer sheet.
+ * Extract structured answer data with resilience (retry + fallback chain).
  */
 export async function extractAnswers(fileUri, mimeType, questionContext, signal) {
     validateFileReference(fileUri, mimeType, "answer");
-    if (!Array.isArray(questionContext)) {
-        throw new ProcessorError("INVALID_REQUEST", 400, "Question context must be an array.");
-    }
-    if (questionContext.length === 0) {
-        throw new ProcessorError("INVALID_REQUEST", 400, "Cannot extract answers because question context is empty.");
+    if (!Array.isArray(questionContext) || questionContext.length === 0) {
+        throw new ProcessorError("INVALID_REQUEST", 400, "Question context must be a non-empty array.");
     }
     if (signal?.aborted) {
         throw new ProcessorError("PROCESSING_TIMEOUT", 504, "Answer extraction was aborted.");
     }
     const client = getGeminiClient();
-    console.log("[gemini:answers] Starting extraction");
-    console.log("[gemini:answers] Model:", GEMINI_MODEL);
-    console.log("[gemini:answers] MIME type:", mimeType);
-    console.log("[gemini:answers] File URI:", fileUri);
-    console.log("[gemini:answers] Question context count:", questionContext.length);
-    try {
+    console.log("[gemini:answers] Starting extraction pipeline with resilience");
+    console.log("[gemini:answers] Primary Model:", GEMINI_MODEL);
+    console.log("[gemini:answers] Fallback Model:", GEMINI_FALLBACK_MODEL);
+    const { result: rawText, modelUsed } = await executeWithResilience(async (modelToUse) => {
         const response = await client.models.generateContent({
-            model: GEMINI_MODEL,
+            model: modelToUse,
             contents: [
                 {
                     role: "user",
@@ -269,39 +247,36 @@ export async function extractAnswers(fileUri, mimeType, questionContext, signal)
         if (signal?.aborted) {
             throw new ProcessorError("PROCESSING_TIMEOUT", 504, "Answer extraction was aborted.");
         }
-        const raw = response.text ?? "";
-        logRawOutput("answer", raw);
-        const parsed = parseGeminiJson(raw, "answer");
-        if (parsed && typeof parsed === "object") {
-            if (Array.isArray(parsed.answers)) {
-                parsed.answers = parsed.answers.map((a) => ({
-                    ...a,
-                    region: normalizeRegion(a.region),
-                }));
-            }
-            if (Array.isArray(parsed.unmappedAnswers)) {
-                parsed.unmappedAnswers = parsed.unmappedAnswers.map((u) => ({
-                    ...u,
-                    region: normalizeRegion(u.region),
-                }));
-            }
-            if (Array.isArray(parsed.blocks)) {
-                parsed.blocks = parsed.blocks.map((b) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
-            }
-            if (Array.isArray(parsed.labels)) {
-                parsed.labels = parsed.labels.map((l) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
-            }
-            if (Array.isArray(parsed.regions)) {
-                parsed.regions = parsed.regions.map((r) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
-            }
+        return response.text ?? "";
+    }, {
+        primaryModel: GEMINI_MODEL,
+        fallbackModel: GEMINI_FALLBACK_MODEL,
+        signal,
+    });
+    logRawOutput("answer", rawText);
+    const parsed = parseGeminiJson(rawText, "answer");
+    if (parsed && typeof parsed === "object") {
+        if (Array.isArray(parsed.answers)) {
+            parsed.answers = parsed.answers.map((a) => ({
+                ...a,
+                region: normalizeRegion(a.region),
+            }));
         }
-        return parsed;
-    }
-    catch (error) {
-        if (error instanceof ProcessorError) {
-            throw error;
+        if (Array.isArray(parsed.unmappedAnswers)) {
+            parsed.unmappedAnswers = parsed.unmappedAnswers.map((u) => ({
+                ...u,
+                region: normalizeRegion(u.region),
+            }));
         }
-        console.error("[gemini:answers] Extraction failed:", error);
-        throw new ProcessorError("GEMINI_REQUEST_FAILED", 502, "Failed to extract structured data from the answer document.");
+        if (Array.isArray(parsed.blocks)) {
+            parsed.blocks = parsed.blocks.map((b) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
+        }
+        if (Array.isArray(parsed.labels)) {
+            parsed.labels = parsed.labels.map((l) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
+        }
+        if (Array.isArray(parsed.regions)) {
+            parsed.regions = parsed.regions.map((r) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
+        }
     }
+    return { parsed, modelUsed };
 }

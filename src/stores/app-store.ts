@@ -42,6 +42,10 @@ type AppStore = {
   activeTab: "questions" | "answers";
   viewerZoom: number;
 
+  isSidebarExpanded: boolean;
+  setSidebarExpanded: (expanded: boolean) => void;
+  toggleSidebarExpanded: () => void;
+
   setSelectedQuestionId: (id: string | null) => void;
   setActiveTab: (tab: "questions" | "answers") => void;
   setViewerZoom: (zoom: number) => void;
@@ -114,6 +118,10 @@ export const useAppStore = create<AppStore>((set) => ({
   selectedQuestionId: null,
   activeTab: "questions",
   viewerZoom: 1,
+
+  isSidebarExpanded: true,
+  setSidebarExpanded: (expanded) => set({ isSidebarExpanded: expanded }),
+  toggleSidebarExpanded: () => set((state) => ({ isSidebarExpanded: !state.isSidebarExpanded })),
 
   setSelectedQuestionId: (id) => set({ selectedQuestionId: id }),
   setActiveTab: (tab) => set({ activeTab: tab }),

@@ -15,6 +15,7 @@ export type ProcessorErrorCode =
   | "SCHEMA_VALIDATION_FAILED"
   | "PROCESSING_TIMEOUT"
   | "PROCESSOR_INTERNAL_ERROR"
+  | "GEMINI_EXTRACTION_UNAVAILABLE"
   | "RATE_LIMITED";
 
 export class ProcessorError extends Error {

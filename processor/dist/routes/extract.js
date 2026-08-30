@@ -52,9 +52,10 @@ extractRoute.post("/extract", async (c) => {
         await pollUntilActive(qUp.name, { signal: controller.signal });
         await pollUntilActive(aUp.name, { signal: controller.signal });
         logAudit("polling_active", { question: qUp.name, answer: aUp.name });
-        // Extract questions
+        // Extract questions with resilience
         logAudit("questions_extract_start", { uri: qUp.uri, mimeType: qUp.mimeType, model: GEMINI_MODEL });
-        const qRaw = await extractQuestions(qUp.uri, qUp.mimeType, controller.signal);
+        const { parsed: qRaw, modelUsed: qModel } = await extractQuestions(qUp.uri, qUp.mimeType, controller.signal);
+        logAudit("questions_extract_success", { modelUsed: qModel });
         const qParsed = questionPayloadSchema.safeParse(qRaw);
         if (!qParsed.success) {
             throw new ProcessorError("SCHEMA_VALIDATION_FAILED", 502, "Question extraction schema validation failed.", [qParsed.error.issues[0]?.message ?? "Invalid question output."]);
@@ -68,10 +69,11 @@ extractRoute.post("/extract", async (c) => {
             questionText,
             maxMarks,
         }));
-        logAudit("questions_validated", { count: questionContext.length, model: GEMINI_MODEL, promptVersion: EXTRACTION_PROMPT_VERSION });
-        // Extract answers
+        logAudit("questions_validated", { count: questionContext.length, modelUsed: qModel, promptVersion: EXTRACTION_PROMPT_VERSION });
+        // Extract answers with resilience
         logAudit("answers_extract_start", { uri: aUp.uri, mimeType: aUp.mimeType, model: GEMINI_MODEL, contextCount: questionContext.length });
-        const aRaw = await extractAnswers(aUp.uri, aUp.mimeType, questionContext, controller.signal);
+        const { parsed: aRaw, modelUsed: aModel } = await extractAnswers(aUp.uri, aUp.mimeType, questionContext, controller.signal);
+        logAudit("answers_extract_success", { modelUsed: aModel });
         const aParsed = answerPayloadSchema.safeParse(aRaw);
         if (!aParsed.success)
             throw new ProcessorError("SCHEMA_VALIDATION_FAILED", 502, "Answer extraction schema validation failed.");
@@ -96,10 +98,10 @@ extractRoute.post("/extract", async (c) => {
         if (answers.length === 0) {
             throw new ProcessorError("SCHEMA_VALIDATION_FAILED", 502, "Answer extraction returned no mapped answers for a non-empty document.", warnings);
         }
-        // Sprint 4: Build Canonical Questions & Answer Blocks
+        // Build Canonical Questions & Answer Blocks
         const canonicalQuestions = buildCanonicalQuestions(qParsed.data.questions);
         const canonicalAnswerBlocks = segmentAnswers(answers, aParsed.data.unmappedAnswers, [...(qParsed.data.blocks ?? []), ...(aParsed.data.blocks ?? [])]);
-        // Sprint 5: Deterministic Mapping Engine
+        // Deterministic Mapping Engine
         const { mappings } = mapQuestionsToAnswers(canonicalQuestions, canonicalAnswerBlocks);
         logAudit("canonical_mapped", {
             canonicalQuestionsCount: canonicalQuestions.length,
@@ -108,6 +110,8 @@ extractRoute.post("/extract", async (c) => {
             matchedCount: mappings.filter((m) => m.status === "matched").length,
             uncertainCount: mappings.filter((m) => m.status === "uncertain").length,
             unansweredCount: mappings.filter((m) => m.status === "unanswered").length,
+            questionModelUsed: qModel,
+            answerModelUsed: aModel,
         });
         const includeRaw = process.env.INCLUDE_RAW === "true";
         const result = {
@@ -125,7 +129,8 @@ extractRoute.post("/extract", async (c) => {
                 },
                 mappings,
                 metadata: {
-                    model: GEMINI_MODEL,
+                    model: qModel,
+                    answerModel: aModel,
                     processedAt: new Date().toISOString(),
                     extractionVersion: EXTRACTION_SCHEMA_VERSION,
                 },
@@ -140,7 +145,7 @@ extractRoute.post("/extract", async (c) => {
                 }
                 : {}),
         };
-        logAudit("complete", { questions: qParsed.data.questions.length, answers: answers.length, mappings: mappings.length, warnings: warnings.length, model: GEMINI_MODEL });
+        logAudit("complete", { questions: qParsed.data.questions.length, answers: answers.length, mappings: mappings.length, modelUsed: qModel });
         return c.json(result, 200);
     }
     catch (e) {

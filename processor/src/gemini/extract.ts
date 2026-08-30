@@ -5,7 +5,8 @@ import {
   QUESTION_EXTRACTION_PROMPT,
 } from "../extraction/prompts.js";
 import type { QuestionContext } from "../extraction/schema.js";
-import { GEMINI_MODEL } from "../config.js";
+import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL } from "../config.js";
+import { executeWithResilience } from "./resilience.js";
 
 /**
  * Normalizes bounding box coordinates to { x, y, width, height }
@@ -32,10 +33,6 @@ function normalizeRegion(r: any) {
   };
 }
 
-/**
- * Logs raw Gemini output before JSON parsing.
- * This is required for Sprint 3 debugging and validation.
- */
 function logRawOutput(
   documentType: "question" | "answer",
   raw: string,
@@ -45,9 +42,6 @@ function logRawOutput(
   console.log(`========== END RAW ${documentType.toUpperCase()} OUTPUT ==========\n`);
 }
 
-/**
- * Removes markdown code fences if Gemini returns ```json ... ```
- */
 function cleanGeminiJson(raw: string): string {
   const trimmed = raw.trim();
 
@@ -68,9 +62,6 @@ function cleanGeminiJson(raw: string): string {
   return trimmed;
 }
 
-/**
- * Parses Gemini text output into JSON.
- */
 function parseGeminiJson(
   raw: string,
   documentType: "question" | "answer",
@@ -90,7 +81,6 @@ function parseGeminiJson(
   } catch (error) {
     console.error(`[gemini:${documentType}] Failed to parse JSON.`);
     console.error(`[gemini:${documentType}] Parse error:`, error);
-    console.error(`[gemini:${documentType}] Raw response:`, cleaned);
 
     throw new ProcessorError(
       "MODEL_OUTPUT_INVALID",
@@ -100,9 +90,6 @@ function parseGeminiJson(
   }
 }
 
-/**
- * Ensures that the uploaded Gemini file has the required URI.
- */
 function validateFileReference(
   fileUri: string,
   mimeType: string,
@@ -125,14 +112,19 @@ function validateFileReference(
   }
 }
 
+export type ExtractionWithModelResult = {
+  parsed: unknown;
+  modelUsed: string;
+};
+
 /**
- * Extract structured question data from a question paper.
+ * Extract structured question data with resilience (retry + fallback chain).
  */
 export async function extractQuestions(
   fileUri: string,
   mimeType: string,
   signal?: AbortSignal,
-): Promise<unknown> {
+): Promise<ExtractionWithModelResult> {
   validateFileReference(fileUri, mimeType, "question");
 
   if (signal?.aborted) {
@@ -145,122 +137,110 @@ export async function extractQuestions(
 
   const client = getGeminiClient();
 
-  console.log("[gemini:questions] Starting extraction");
-  console.log("[gemini:questions] Model:", GEMINI_MODEL);
-  console.log("[gemini:questions] MIME type:", mimeType);
-  console.log("[gemini:questions] File URI:", fileUri);
+  console.log("[gemini:questions] Starting extraction pipeline with resilience");
+  console.log("[gemini:questions] Primary Model:", GEMINI_MODEL);
+  console.log("[gemini:questions] Fallback Model:", GEMINI_FALLBACK_MODEL);
 
-  try {
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              fileData: {
-                fileUri,
-                mimeType,
-              },
-            },
-            {
-              text: QUESTION_EXTRACTION_PROMPT,
-            },
-          ],
-        },
-      ],
-      config: {
-        temperature: 0,
-        responseMimeType: "application/json",
-        responseJsonSchema: {
-          type: "object",
-          properties: {
-            questions: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                  index: { type: "integer" },
-                  questionText: { type: "string" },
-                  maxMarks: { type: "number" },
-                  pageIndex: { type: "integer" },
+  const { result: rawText, modelUsed } = await executeWithResilience<string>(
+    async (modelToUse) => {
+      const response = await client.models.generateContent({
+        model: modelToUse,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                fileData: {
+                  fileUri,
+                  mimeType,
                 },
-                required: ["id", "index", "questionText", "maxMarks", "pageIndex"],
               },
-            },
-            blocks: { type: "array", items: { type: "object", properties: { id: { type: "string" }, type: { type: "string" } } } },
-            labels: { type: "array", items: { type: "object", properties: { id: { type: "string" }, text: { type: "string" }, type: { type: "string" } } } },
-            regions: { type: "array", items: { type: "object", properties: { id: { type: "string" }, type: { type: "string" }, pageIndex: { type: "integer" } } } },
+              {
+                text: QUESTION_EXTRACTION_PROMPT,
+              },
+            ],
           },
-          required: ["questions"],
+        ],
+        config: {
+          temperature: 0,
+          responseMimeType: "application/json",
+          responseJsonSchema: {
+            type: "object",
+            properties: {
+              questions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    index: { type: "integer" },
+                    questionText: { type: "string" },
+                    maxMarks: { type: "number" },
+                    pageIndex: { type: "integer" },
+                  },
+                  required: ["id", "index", "questionText", "maxMarks", "pageIndex"],
+                },
+              },
+              blocks: { type: "array", items: { type: "object", properties: { id: { type: "string" }, type: { type: "string" } } } },
+              labels: { type: "array", items: { type: "object", properties: { id: { type: "string" }, text: { type: "string" }, type: { type: "string" } } } },
+              regions: { type: "array", items: { type: "object", properties: { id: { type: "string" }, type: { type: "string" }, pageIndex: { type: "integer" } } } },
+            },
+            required: ["questions"],
+          },
         },
-      },
-    });
+      });
 
-    if (signal?.aborted) {
-      throw new ProcessorError(
-        "PROCESSING_TIMEOUT",
-        504,
-        "Question extraction was aborted.",
-      );
-    }
-
-    const raw = response.text ?? "";
-    logRawOutput("question", raw);
-
-    const parsed: any = parseGeminiJson(raw, "question");
-    if (parsed && typeof parsed === "object") {
-      if (Array.isArray(parsed.blocks)) {
-        parsed.blocks = parsed.blocks.map((b: any) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
+      if (signal?.aborted) {
+        throw new ProcessorError(
+          "PROCESSING_TIMEOUT",
+          504,
+          "Question extraction was aborted.",
+        );
       }
-      if (Array.isArray(parsed.labels)) {
-        parsed.labels = parsed.labels.map((l: any) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
-      }
-      if (Array.isArray(parsed.regions)) {
-        parsed.regions = parsed.regions.map((r: any) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
-      }
-    }
-    return parsed;
-  } catch (error) {
-    if (error instanceof ProcessorError) {
-      throw error;
-    }
 
-    console.error("[gemini:questions] Extraction failed:", error);
+      return response.text ?? "";
+    },
+    {
+      primaryModel: GEMINI_MODEL,
+      fallbackModel: GEMINI_FALLBACK_MODEL,
+      signal,
+    }
+  );
 
-    throw new ProcessorError(
-      "GEMINI_REQUEST_FAILED",
-      502,
-      "Failed to extract structured data from the question document.",
-    );
+  logRawOutput("question", rawText);
+
+  const parsed: any = parseGeminiJson(rawText, "question");
+  if (parsed && typeof parsed === "object") {
+    if (Array.isArray(parsed.blocks)) {
+      parsed.blocks = parsed.blocks.map((b: any) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
+    }
+    if (Array.isArray(parsed.labels)) {
+      parsed.labels = parsed.labels.map((l: any) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
+    }
+    if (Array.isArray(parsed.regions)) {
+      parsed.regions = parsed.regions.map((r: any) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
+    }
   }
+
+  return { parsed, modelUsed };
 }
 
 /**
- * Extract structured answer data from an answer sheet.
+ * Extract structured answer data with resilience (retry + fallback chain).
  */
 export async function extractAnswers(
   fileUri: string,
   mimeType: string,
   questionContext: QuestionContext[],
   signal?: AbortSignal,
-): Promise<unknown> {
+): Promise<ExtractionWithModelResult> {
   validateFileReference(fileUri, mimeType, "answer");
 
-  if (!Array.isArray(questionContext)) {
+  if (!Array.isArray(questionContext) || questionContext.length === 0) {
     throw new ProcessorError(
       "INVALID_REQUEST",
       400,
-      "Question context must be an array.",
-    );
-  }
-
-  if (questionContext.length === 0) {
-    throw new ProcessorError(
-      "INVALID_REQUEST",
-      400,
-      "Cannot extract answers because question context is empty.",
+      "Question context must be a non-empty array.",
     );
   }
 
@@ -274,138 +254,133 @@ export async function extractAnswers(
 
   const client = getGeminiClient();
 
-  console.log("[gemini:answers] Starting extraction");
-  console.log("[gemini:answers] Model:", GEMINI_MODEL);
-  console.log("[gemini:answers] MIME type:", mimeType);
-  console.log("[gemini:answers] File URI:", fileUri);
-  console.log("[gemini:answers] Question context count:", questionContext.length);
+  console.log("[gemini:answers] Starting extraction pipeline with resilience");
+  console.log("[gemini:answers] Primary Model:", GEMINI_MODEL);
+  console.log("[gemini:answers] Fallback Model:", GEMINI_FALLBACK_MODEL);
 
-  try {
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              fileData: {
-                fileUri,
-                mimeType,
-              },
-            },
-            {
-              text: `${ANSWER_EXTRACTION_PROMPT}\n\nQUESTION CONTEXT:\n${JSON.stringify(questionContext, null, 2)}\n`,
-            },
-          ],
-        },
-      ],
-      config: {
-        temperature: 0,
-        responseMimeType: "application/json",
-        responseJsonSchema: {
-          type: "object",
-          properties: {
-            answers: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                  questionId: { type: "string" },
-                  answerText: { type: "string" },
-                  pageIndex: { type: "integer" },
-                  region: {
-                    type: "object",
-                    properties: {
-                      x: { type: "number" },
-                      y: { type: "number" },
-                      width: { type: "number" },
-                      height: { type: "number" },
-                    },
-                    required: ["x", "y", "width", "height"],
-                  },
+  const { result: rawText, modelUsed } = await executeWithResilience<string>(
+    async (modelToUse) => {
+      const response = await client.models.generateContent({
+        model: modelToUse,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                fileData: {
+                  fileUri,
+                  mimeType,
                 },
-                required: ["id", "questionId", "answerText", "pageIndex", "region"],
               },
-            },
-            blocks: { type: "array", items: { type: "object" } },
-            labels: { type: "array", items: { type: "object" } },
-            regions: { type: "array", items: { type: "object" } },
-            unmappedAnswers: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                  answerText: { type: "string" },
-                  pageIndex: { type: "integer" },
-                  region: {
-                    type: "object",
-                    properties: {
-                      x: { type: "number" },
-                      y: { type: "number" },
-                      width: { type: "number" },
-                      height: { type: "number" },
-                    },
-                  },
-                  reason: { type: "string" },
-                },
-                required: ["id", "answerText", "pageIndex", "region", "reason"],
+              {
+                text: `${ANSWER_EXTRACTION_PROMPT}\n\nQUESTION CONTEXT:\n${JSON.stringify(questionContext, null, 2)}\n`,
               },
-            },
+            ],
           },
-          required: ["answers"],
+        ],
+        config: {
+          temperature: 0,
+          responseMimeType: "application/json",
+          responseJsonSchema: {
+            type: "object",
+            properties: {
+              answers: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    questionId: { type: "string" },
+                    answerText: { type: "string" },
+                    pageIndex: { type: "integer" },
+                    region: {
+                      type: "object",
+                      properties: {
+                        x: { type: "number" },
+                        y: { type: "number" },
+                        width: { type: "number" },
+                        height: { type: "number" },
+                      },
+                      required: ["x", "y", "width", "height"],
+                    },
+                  },
+                  required: ["id", "questionId", "answerText", "pageIndex", "region"],
+                },
+              },
+              blocks: { type: "array", items: { type: "object" } },
+              labels: { type: "array", items: { type: "object" } },
+              regions: { type: "array", items: { type: "object" } },
+              unmappedAnswers: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    answerText: { type: "string" },
+                    pageIndex: { type: "integer" },
+                    region: {
+                      type: "object",
+                      properties: {
+                        x: { type: "number" },
+                        y: { type: "number" },
+                        width: { type: "number" },
+                        height: { type: "number" },
+                      },
+                    },
+                    reason: { type: "string" },
+                  },
+                  required: ["id", "answerText", "pageIndex", "region", "reason"],
+                },
+              },
+            },
+            required: ["answers"],
+          },
         },
-      },
-    });
+      });
 
-    if (signal?.aborted) {
-      throw new ProcessorError(
-        "PROCESSING_TIMEOUT",
-        504,
-        "Answer extraction was aborted.",
-      );
+      if (signal?.aborted) {
+        throw new ProcessorError(
+          "PROCESSING_TIMEOUT",
+          504,
+          "Answer extraction was aborted.",
+        );
+      }
+
+      return response.text ?? "";
+    },
+    {
+      primaryModel: GEMINI_MODEL,
+      fallbackModel: GEMINI_FALLBACK_MODEL,
+      signal,
     }
+  );
 
-    const raw = response.text ?? "";
-    logRawOutput("answer", raw);
+  logRawOutput("answer", rawText);
 
-    const parsed: any = parseGeminiJson(raw, "answer");
-    if (parsed && typeof parsed === "object") {
-      if (Array.isArray(parsed.answers)) {
-        parsed.answers = parsed.answers.map((a: any) => ({
-          ...a,
-          region: normalizeRegion(a.region),
-        }));
-      }
-      if (Array.isArray(parsed.unmappedAnswers)) {
-        parsed.unmappedAnswers = parsed.unmappedAnswers.map((u: any) => ({
-          ...u,
-          region: normalizeRegion(u.region),
-        }));
-      }
-      if (Array.isArray(parsed.blocks)) {
-        parsed.blocks = parsed.blocks.map((b: any) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
-      }
-      if (Array.isArray(parsed.labels)) {
-        parsed.labels = parsed.labels.map((l: any) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
-      }
-      if (Array.isArray(parsed.regions)) {
-        parsed.regions = parsed.regions.map((r: any) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
-      }
+  const parsed: any = parseGeminiJson(rawText, "answer");
+  if (parsed && typeof parsed === "object") {
+    if (Array.isArray(parsed.answers)) {
+      parsed.answers = parsed.answers.map((a: any) => ({
+        ...a,
+        region: normalizeRegion(a.region),
+      }));
     }
-    return parsed;
-  } catch (error) {
-    if (error instanceof ProcessorError) {
-      throw error;
+    if (Array.isArray(parsed.unmappedAnswers)) {
+      parsed.unmappedAnswers = parsed.unmappedAnswers.map((u: any) => ({
+        ...u,
+        region: normalizeRegion(u.region),
+      }));
     }
-
-    console.error("[gemini:answers] Extraction failed:", error);
-
-    throw new ProcessorError(
-      "GEMINI_REQUEST_FAILED",
-      502,
-      "Failed to extract structured data from the answer document.",
-    );
+    if (Array.isArray(parsed.blocks)) {
+      parsed.blocks = parsed.blocks.map((b: any) => b.region ? { ...b, region: normalizeRegion(b.region) } : b);
+    }
+    if (Array.isArray(parsed.labels)) {
+      parsed.labels = parsed.labels.map((l: any) => l.region ? { ...l, region: normalizeRegion(l.region) } : l);
+    }
+    if (Array.isArray(parsed.regions)) {
+      parsed.regions = parsed.regions.map((r: any) => ({ ...r, region: normalizeRegion(r.region ?? r) }));
+    }
   }
+
+  return { parsed, modelUsed };
 }
