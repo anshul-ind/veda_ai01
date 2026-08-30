@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { healthRoute } from "./routes/health.js";
 import { extractRoute } from "./routes/extract.js";
+import { gradeRoute } from "./routes/grade.js";
 
 const app = new Hono();
 
@@ -41,6 +42,7 @@ app.use("/extract", async (c, next) => {
 
 app.route("/", healthRoute);
 app.route("/", extractRoute);
+app.route("/", gradeRoute);
 
 app.notFound((c) => c.json({ success: false, code: "INVALID_REQUEST", error: "Not found." }, 404));
 

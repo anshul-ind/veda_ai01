@@ -38,7 +38,7 @@ export const canonicalRegionSchema = z.object({
   y1: z.number().min(0).max(1000),
   x2: z.number().min(0).max(1000),
   y2: z.number().min(0).max(1000),
-  page: z.number().int().nonnegative(),
+  page: z.number().int().positive().default(1),
   coordinateSource: z.literal("gemini_estimated").default("gemini_estimated"),
 });
 
@@ -62,7 +62,8 @@ export const canonicalQuestionSchema = z.object({
   parentQuestionId: z.string().nullable(),
   type: z.enum(["main", "sub", "unknown"]),
   text: z.string(),
-  page: z.number().int().nonnegative().nullable(),
+  maxMarks: z.number().finite().nonnegative().default(1),
+  page: z.number().int().positive().default(1),
   regions: z.array(canonicalRegionSchema).default([]),
   warnings: z.array(z.string()).default([]),
 });
@@ -86,7 +87,7 @@ export const canonicalAnswerBlockSchema = z.object({
   normalizedLabel: z.string().nullable(),
   parentAnswerBlockId: z.string().nullable(),
   text: z.string(),
-  page: z.number().int().nonnegative().nullable(),
+  page: z.number().int().positive().default(1),
   regions: z.array(canonicalRegionSchema).default([]),
   warnings: z.array(z.string()).default([]),
 });
@@ -103,7 +104,8 @@ export const mappingEvidenceSchema = z.object({
 });
 
 export const questionAnswerMappingSchema = z.object({
-  questionId: z.string(),
+  // null when status === "unmatched" (orphan answer block with no question)
+  questionId: z.string().nullable(),
   answerBlockId: z.string().nullable(),
   confidence: z.number().min(0).max(1),
   status: z.enum(["matched", "uncertain", "unanswered", "unmatched"]),

@@ -54,7 +54,13 @@ For every answer:
 - id must be a_1, a_2, a_3 and so on.
 - Preserve the student's answer exactly.
 - pageIndex starts at 0.
-- region coordinates must be normalized from 0 to 1.
+- region coordinates must be normalized from 0 to 1 ({ x, y, width, height }).
+- SPATIAL BOUNDING BOX RULES:
+  * The region MUST tightly bound ONLY the student's written/typed answer text itself.
+  * The region MUST begin at the first character/label of the student's answer.
+  * The region MUST end at the final character of that specific answer.
+  * NEVER include document titles, page headers, or section headings (e.g. "SECTION A (Multiple Choice Questions)", "PART 1", "INSTRUCTIONS") inside an answer region.
+  * Stop the bounding box BEFORE any subsequent question label or section heading.
 - Map to a questionId only when the mapping is clear.
 - Otherwise place it in unmappedAnswers.
 
@@ -65,4 +71,5 @@ Do not:
 - calculate marks
 - generate AI feedback
 - invent missing text
+- include decorative headers or section titles inside answer bounding boxes
 `;

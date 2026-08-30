@@ -3,6 +3,7 @@ import type {
   CanonicalQuestion,
   QuestionAnswerMapping,
 } from "../extraction/schema.js";
+import { isStructuralHeader } from "../canonical/segmentation.js";
 
 /**
  * Stage 1: Explicit Label Matcher
@@ -71,119 +72,162 @@ export type MappingEngineResult = {
   unmatchedAnswerBlocks: CanonicalAnswerBlock[];
 };
 
+interface CandidatePair {
+  questionId: string;
+  block: CanonicalAnswerBlock;
+  confidence: number;
+  labelScore: number;
+  structScore: number;
+  reasons: string[];
+}
+
 /**
- * 5-Stage Deterministic Mapping Engine
+ * 5-Stage Deterministic Mapping Engine with Global Assignment & Margin Checks
  */
 export function mapQuestionsToAnswers(
   questions: CanonicalQuestion[],
   answerBlocks: CanonicalAnswerBlock[]
 ): MappingEngineResult {
-  const candidateMap = new Map<string, Array<{ block: CanonicalAnswerBlock; confidence: number; labelScore: number; structScore: number; reasons: string[] }>>();
+  const allPairs: CandidatePair[] = [];
+  const candidateMap = new Map<string, CandidatePair[]>();
 
-  // Candidate Generation & Stage 1-3 Scoring
+  // Stage 1-3: Candidate Generation & Scoring
   questions.forEach((q) => {
-    const candidates: Array<{ block: CanonicalAnswerBlock; confidence: number; labelScore: number; structScore: number; reasons: string[] }> = [];
+    const qCandidates: CandidatePair[] = [];
 
     answerBlocks.forEach((a) => {
+      // Exclude structural document headers from answer candidates
+      if (isStructuralHeader(a.text)) {
+        return;
+      }
+
       const labelRes = evaluateLabelScore(q, a);
       const structRes = evaluateStructuralScore(q, a);
 
       const labelScore = labelRes.score;
       const structScore = structRes.score;
 
-      // Combined confidence (semantic is strictly 0)
-      const confidence = Number(Math.min(1.0, labelScore * 0.7 + structScore * 0.3).toFixed(2));
+      // If both question and answer have explicit labels and they contradict (different numbers),
+      // do NOT generate a naive positional candidate.
+      const hasConflictingExplicitLabels =
+        q.normalizedLabel &&
+        a.normalizedLabel &&
+        labelScore === 0 &&
+        q.normalizedLabel.match(/^Q(\d+)/)?.[1] !== a.normalizedLabel.match(/^Q(\d+)/)?.[1];
 
-      // Candidate generation requirement: label match or strong structural alignment
-      if (labelScore > 0 || (structScore >= 0.8 && labelScore >= 0)) {
+      if (hasConflictingExplicitLabels) {
+        return;
+      }
+
+      // Candidate generation requirement: label match or strong structural alignment without label conflict
+      if (labelScore > 0 || structScore >= 0.8) {
         const reasons: string[] = [];
         if (labelRes.reason) reasons.push(labelRes.reason);
         if (structRes.reason) reasons.push(structRes.reason);
 
-        candidates.push({
+        const confidence = Number(Math.min(1.0, labelScore * 0.7 + structScore * 0.3).toFixed(2));
+
+        const pair: CandidatePair = {
+          questionId: q.id,
           block: a,
           confidence,
           labelScore,
           structScore,
           reasons,
-        });
+        };
+
+        qCandidates.push(pair);
+        allPairs.push(pair);
       }
     });
 
-    // Sort candidates descending by confidence
-    candidates.sort((c1, c2) => c2.confidence - c1.confidence);
-    candidateMap.set(q.id, candidates);
+    qCandidates.sort((c1, c2) => c2.confidence - c1.confidence);
+    candidateMap.set(q.id, qCandidates);
   });
 
-  // Stage 4: Conflict Resolution & Stage 5 Margin Check
-  const assignedAnswers = new Set<string>();
+  // Stage 4: Global Assignment (Highest confidence pairs assigned first)
+  // Sort all candidate pairs globally descending by confidence
+  allPairs.sort((p1, p2) => p2.confidence - p1.confidence);
+
+  const assignedQuestions = new Map<string, CandidatePair>();
+  const assignedAnswerBlockIds = new Set<string>();
+
+  allPairs.forEach((pair) => {
+    if (assignedQuestions.has(pair.questionId)) return;
+    if (assignedAnswerBlockIds.has(pair.block.id)) return;
+
+    assignedQuestions.set(pair.questionId, pair);
+    assignedAnswerBlockIds.add(pair.block.id);
+  });
+
+  // Stage 5: Final Mapping Assembly & Margin Check
   const mappings: QuestionAnswerMapping[] = [];
 
   questions.forEach((q) => {
+    const assignedPair = assignedQuestions.get(q.id);
     const candidates = candidateMap.get(q.id) || [];
 
-    if (candidates.length === 0) {
-      mappings.push({
-        questionId: q.id,
-        answerBlockId: null,
-        confidence: 0,
-        status: "unanswered",
-        evidence: {
-          label: 0,
-          structural: 0,
-          semantic: 0,
-          reasons: ["No candidate answer block found"],
-        },
-      });
+    if (!assignedPair) {
+      // Check if there was a candidate that was stolen by higher confidence question
+      if (candidates.length > 0) {
+        const topCandidate = candidates[0];
+        mappings.push({
+          questionId: q.id,
+          answerBlockId: topCandidate.block.id,
+          confidence: Number((topCandidate.confidence * 0.5).toFixed(2)),
+          status: "uncertain",
+          evidence: {
+            label: topCandidate.labelScore,
+            structural: topCandidate.structScore,
+            semantic: 0,
+            reasons: [
+              ...topCandidate.reasons,
+              "Conflict: Candidate answer block was assigned to another question with higher confidence",
+            ],
+          },
+        });
+      } else {
+        mappings.push({
+          questionId: q.id,
+          answerBlockId: null,
+          confidence: 0,
+          status: "unanswered",
+          evidence: {
+            label: 0,
+            structural: 0,
+            semantic: 0,
+            reasons: ["No candidate answer block found"],
+          },
+        });
+      }
       return;
     }
 
-    const top = candidates[0];
-    const second = candidates.length > 1 ? candidates[1] : null;
+    // Margin check against 2nd candidate
+    const second = candidates.find((c) => c.block.id !== assignedPair.block.id);
+    const margin = second ? assignedPair.confidence - second.confidence : 1.0;
+    let status: "matched" | "uncertain" = assignedPair.confidence >= 0.7 ? "matched" : "uncertain";
 
-    // Check if answer block is already assigned to a higher-confidence question
-    if (assignedAnswers.has(top.block.id)) {
-      mappings.push({
-        questionId: q.id,
-        answerBlockId: top.block.id,
-        confidence: Number((top.confidence * 0.5).toFixed(2)),
-        status: "uncertain",
-        evidence: {
-          label: top.labelScore,
-          structural: top.structScore,
-          semantic: 0,
-          reasons: [...top.reasons, "Conflict: Answer block was also assigned to another question"],
-        },
-      });
-      return;
-    }
-
-    // Stage 5: Margin Check
-    const margin = second ? top.confidence - second.confidence : 1.0;
-    let status: "matched" | "uncertain" = top.confidence >= 0.7 ? "matched" : "uncertain";
-
-    if (margin < 0.15 && top.confidence < 0.9) {
+    if (margin < 0.15 && assignedPair.confidence < 0.9) {
       status = "uncertain";
-      top.reasons.push(`Tight confidence margin (${margin.toFixed(2)}) against alternative candidate`);
+      assignedPair.reasons.push(`Tight confidence margin (${margin.toFixed(2)}) against alternative candidate`);
     }
-
-    assignedAnswers.add(top.block.id);
 
     mappings.push({
       questionId: q.id,
-      answerBlockId: top.block.id,
-      confidence: top.confidence,
+      answerBlockId: assignedPair.block.id,
+      confidence: assignedPair.confidence,
       status,
       evidence: {
-        label: top.labelScore,
-        structural: top.structScore,
+        label: assignedPair.labelScore,
+        structural: assignedPair.structScore,
         semantic: 0,
-        reasons: top.reasons,
+        reasons: assignedPair.reasons,
       },
     });
   });
 
-  const unmatchedAnswerBlocks = answerBlocks.filter((a) => !assignedAnswers.has(a.id));
+  const unmatchedAnswerBlocks = answerBlocks.filter((a) => !assignedAnswerBlockIds.has(a.id));
 
   return {
     mappings,

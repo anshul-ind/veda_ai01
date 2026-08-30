@@ -136,3 +136,13 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
+
+/* SVG highlight entrance animation */
+@keyframes highlightFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.highlight-region {
+  animation: highlightFadeIn 0.22s ease-out forwards;
+}

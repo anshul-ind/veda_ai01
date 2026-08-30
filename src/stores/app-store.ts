@@ -3,6 +3,33 @@
 import { create } from "zustand";
 import type { ExtractionResult, ExtractionStage } from "@/types/extraction";
 
+// -------------------------------------------------------
+// Grading Types
+// -------------------------------------------------------
+export interface QuestionGrade {
+  questionId: string;
+  score: number | null;
+  maxScore: number | null;
+  status: "graded" | "not_eligible" | "error";
+  feedback: string | null;
+  strengths: string[];
+  improvements: string[];
+  warnings: string[];
+}
+
+export type GradeStatus = "idle" | "loading" | "graded" | "not_eligible" | "error";
+
+export interface GradeCacheEntry {
+  status: GradeStatus;
+  data?: QuestionGrade;
+  error?: string;
+  /** reason shown for not_eligible questions (uncertain/unanswered/unmatched) */
+  reason?: string;
+}
+
+// -------------------------------------------------------
+// Store Type
+// -------------------------------------------------------
 type AppStore = {
   questionFile: File | null;
   answerFile: File | null;
@@ -37,7 +64,7 @@ type AppStore = {
   resetUploadState: () => void;
   resetExtractionState: () => void;
 
-  // Sprint 4/5: Exam Review UI State
+  // Exam Review UI State
   selectedQuestionId: string | null;
   activeTab: "questions" | "answers";
   viewerZoom: number;
@@ -49,8 +76,17 @@ type AppStore = {
   setSelectedQuestionId: (id: string | null) => void;
   setActiveTab: (tab: "questions" | "answers") => void;
   setViewerZoom: (zoom: number) => void;
+
+  // Sprint 9: Lazy Grading Cache
+  /** Per-question grading cache. Key = questionId. */
+  gradingCache: Record<string, GradeCacheEntry>;
+  setGradeCacheEntry: (questionId: string, entry: GradeCacheEntry) => void;
+  clearGradingCache: () => void;
 };
 
+// -------------------------------------------------------
+// Store
+// -------------------------------------------------------
 export const useAppStore = create<AppStore>((set) => ({
   questionFile: null,
   answerFile: null,
@@ -103,6 +139,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedQuestionId: null,
       activeTab: "questions",
       viewerZoom: 1,
+      gradingCache: {},
     }),
   resetExtractionState: () =>
     set({
@@ -113,6 +150,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedQuestionId: null,
       activeTab: "questions",
       viewerZoom: 1,
+      gradingCache: {},
     }),
 
   selectedQuestionId: null,
@@ -121,9 +159,18 @@ export const useAppStore = create<AppStore>((set) => ({
 
   isSidebarExpanded: true,
   setSidebarExpanded: (expanded) => set({ isSidebarExpanded: expanded }),
-  toggleSidebarExpanded: () => set((state) => ({ isSidebarExpanded: !state.isSidebarExpanded })),
+  toggleSidebarExpanded: () =>
+    set((state) => ({ isSidebarExpanded: !state.isSidebarExpanded })),
 
   setSelectedQuestionId: (id) => set({ selectedQuestionId: id }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setViewerZoom: (zoom) => set({ viewerZoom: zoom }),
+
+  // Grading cache
+  gradingCache: {},
+  setGradeCacheEntry: (questionId, entry) =>
+    set((state) => ({
+      gradingCache: { ...state.gradingCache, [questionId]: entry },
+    })),
+  clearGradingCache: () => set({ gradingCache: {} }),
 }));

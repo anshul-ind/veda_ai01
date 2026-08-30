@@ -119,14 +119,31 @@ extractRoute.post("/extract", async (c) => {
     );
 
     // Deterministic Mapping Engine
-    const { mappings } = mapQuestionsToAnswers(canonicalQuestions, canonicalAnswerBlocks);
+    const { mappings, unmatchedAnswerBlocks } = mapQuestionsToAnswers(canonicalQuestions, canonicalAnswerBlocks);
+
+    // Include orphan answer blocks as "unmatched" entries so the frontend can surface them
+    const unmatchedMappings = unmatchedAnswerBlocks.map((block) => ({
+      questionId: null as string | null,
+      answerBlockId: block.id,
+      confidence: 0,
+      status: "unmatched" as const,
+      evidence: {
+        label: 0,
+        structural: 0,
+        semantic: 0 as const,
+        reasons: ["No matching question found for this answer block"],
+      },
+    }));
+    const allMappings = [...mappings, ...unmatchedMappings];
+
     logAudit("canonical_mapped", {
       canonicalQuestionsCount: canonicalQuestions.length,
       canonicalAnswerBlocksCount: canonicalAnswerBlocks.length,
-      mappingsCount: mappings.length,
+      mappingsCount: allMappings.length,
       matchedCount: mappings.filter((m) => m.status === "matched").length,
       uncertainCount: mappings.filter((m) => m.status === "uncertain").length,
       unansweredCount: mappings.filter((m) => m.status === "unanswered").length,
+      unmatchedCount: unmatchedMappings.length,
       questionModelUsed: qModel,
       answerModelUsed: aModel,
     });
@@ -146,7 +163,7 @@ extractRoute.post("/extract", async (c) => {
           questions: canonicalQuestions,
           answerBlocks: canonicalAnswerBlocks,
         },
-        mappings,
+        mappings: allMappings,
         metadata: {
           model: qModel,
           answerModel: aModel,
