@@ -124,7 +124,7 @@ async function uploadDirect(fileBuffer, mimeType, displayName) {
                 'X-Goog-Upload-Command': 'upload, finalize',
                 'Content-Type': mimeType,
             },
-            body: fileBuffer,
+            body: new Uint8Array(fileBuffer),
             signal: putController.signal,
         });
     }

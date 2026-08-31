@@ -105,9 +105,10 @@ export async function executeWithResilience<T>(
 
         const retryable = isRetryableError(error);
         const errorMsg = error instanceof Error ? error.message : String(error);
+        const causeMsg = error instanceof Error && error.cause ? String(error.cause) : 'no-cause';
 
         console.warn(
-          `[resilience] Model '${model}' attempt ${attempt}/${maxAttemptsPerModel} failed. Retryable: ${retryable}. Error: ${errorMsg} Cause: ${error.cause ?? 'no-cause'}`
+          `[resilience] Model '${model}' attempt ${attempt}/${maxAttemptsPerModel} failed. Retryable: ${retryable}. Error: ${errorMsg} Cause: ${causeMsg}`
         );
 
         if (!retryable) {
