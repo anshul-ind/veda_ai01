@@ -42,6 +42,35 @@ function logRawOutput(
   console.log(`========== END RAW ${documentType.toUpperCase()} OUTPUT ==========\n`);
 }
 
+/**
+ * Regex fallback patterns for detecting question numbers in answer text.
+ * These run when Gemini's detected_question_number is null or confidence is low.
+ */
+const FALLBACK_PATTERNS = [
+  /Q\.?\s*(\d+)/i,           // Q3, Q.3, q 3
+  /^(\d+)[.)]/,               // 3. or 3)
+  /Ans(?:wer)?\s*(\d+)/i,    // Ans 3, Answer 3
+  /Question\s+(\d+)/i,        // Question 3
+  /No\.?\s*(\d+)/i,           // No. 3, No 3
+];
+
+/**
+ * Attempts to extract a question number from raw answer text using regex patterns.
+ * Returns the detected question number or null if no pattern matches.
+ */
+function regexFallbackDetectQuestionNumber(answerText: string): number | null {
+  for (const pattern of FALLBACK_PATTERNS) {
+    const match = answerText.match(pattern);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (num > 0 && num < 1000) {
+        return num;
+      }
+    }
+  }
+  return null;
+}
+
 function cleanGeminiJson(raw: string): string {
   const trimmed = raw.trim();
 
@@ -290,7 +319,7 @@ export async function extractAnswers(
                   type: "object",
                   properties: {
                     id: { type: "string" },
-                    questionId: { type: "string" },
+                    questionId: { type: ["string", "null"] },
                     answerText: { type: "string" },
                     pageIndex: { type: "integer" },
                     region: {
@@ -303,8 +332,11 @@ export async function extractAnswers(
                       },
                       required: ["x", "y", "width", "height"],
                     },
+                    detected_question_number: { type: ["integer", "null"] },
+                    confidence: { type: "string", enum: ["high", "low"] },
+                    match_basis: { type: "string", enum: ["explicit_number", "positional_guess"] },
                   },
-                  required: ["id", "questionId", "answerText", "pageIndex", "region"],
+                  required: ["id", "answerText", "pageIndex", "region", "detected_question_number", "confidence", "match_basis"],
                 },
               },
               blocks: { type: "array", items: { type: "object" } },
@@ -360,10 +392,43 @@ export async function extractAnswers(
   const parsed: any = parseGeminiJson(rawText, "answer");
   if (parsed && typeof parsed === "object") {
     if (Array.isArray(parsed.answers)) {
-      parsed.answers = parsed.answers.map((a: any) => ({
-        ...a,
-        region: normalizeRegion(a.region),
-      }));
+      // Apply regex fallback for answers where Gemini couldn't determine question number
+      parsed.answers = parsed.answers.map((a: any) => {
+        const normalizedRegion = normalizeRegion(a.region);
+        
+        // If Gemini didn't detect a question number or has low confidence,
+        // try regex fallback on the raw answer text
+        let detectedQuestionNumber = a.detected_question_number ?? null;
+        let confidence = a.confidence ?? "low";
+        let matchBasis = a.match_basis ?? "none";
+        let questionId = a.questionId ?? null;
+
+        // If Gemini's detection is weak, try regex fallback
+        if (detectedQuestionNumber === null || confidence === "low") {
+          const regexResult = regexFallbackDetectQuestionNumber(a.answerText);
+          if (regexResult !== null) {
+            detectedQuestionNumber = regexResult;
+            confidence = "high"; // Regex found explicit number
+            matchBasis = "regex_fallback";
+            // Update questionId if it was null
+            if (questionId === null) {
+              questionId = `q_${regexResult}`;
+            }
+          }
+        }
+
+        // Log the match basis for auditability
+        console.log(`[gemini:answer] ${a.id}: detected_q=${detectedQuestionNumber}, confidence=${confidence}, match_basis=${matchBasis}, questionId=${questionId}`);
+
+        return {
+          ...a,
+          questionId,
+          region: normalizedRegion,
+          detected_question_number: detectedQuestionNumber,
+          confidence,
+          match_basis: matchBasis,
+        };
+      });
     }
     if (Array.isArray(parsed.unmappedAnswers)) {
       parsed.unmappedAnswers = parsed.unmappedAnswers.map((u: any) => ({

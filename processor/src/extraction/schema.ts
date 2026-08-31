@@ -74,10 +74,13 @@ export const canonicalQuestionSchema = z.object({
 
 export const answerSchema = z.object({
   id: z.string().regex(/^a_[1-9]\d*$/, "Answer ids must use a_<number>"),
-  questionId: z.string().regex(/^q_[1-9]\d*$/, "questionId must use q_<number>"),
+  questionId: z.string().regex(/^q_[1-9]\d*$/, "questionId must use q_<number>").nullable(),
   answerText: z.string().trim().min(1),
   pageIndex: z.number().int().nonnegative(),
   region: normalizedRegionSchema,
+  detected_question_number: z.number().int().positive().nullable().default(null),
+  confidence: z.enum(["high", "low"]).default("low"),
+  match_basis: z.enum(["explicit_number", "positional_guess", "regex_fallback", "none"]).default("none"),
 });
 
 export const canonicalAnswerBlockSchema = z.object({
@@ -90,6 +93,9 @@ export const canonicalAnswerBlockSchema = z.object({
   page: z.number().int().positive().default(1),
   regions: z.array(canonicalRegionSchema).default([]),
   warnings: z.array(z.string()).default([]),
+  detected_question_number: z.number().int().positive().nullable().optional().default(null),
+  confidence: z.enum(["high", "low"]).optional().default("low"),
+  match_basis: z.enum(["explicit_number", "positional_guess", "regex_fallback", "none"]).optional().default("none"),
 });
 
 // =======================================================

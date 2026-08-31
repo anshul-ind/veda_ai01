@@ -434,8 +434,15 @@ export function ExamReview() {
     mappings.forEach((m) => {
       if (m.questionId) map.set(m.questionId, m);
     });
+
+    // Debug logging to diagnose region mismatch
+    console.log('[mappingByQuestionId] Built mapping:', Array.from(map.entries()).map(([qId, m]) => {
+      const block = answerBlocks.find(b => b.id === m.answerBlockId);
+      return `${qId} → ${m.answerBlockId} (${m.status}, regions: ${JSON.stringify(block?.regions)})`;
+    }));
+
     return map;
-  }, [mappings]);
+  }, [mappings, answerBlocks]);
 
   // Separate out unmatched orphan answer blocks
   const unmatchedMappings = useMemo(
@@ -573,16 +580,23 @@ export function ExamReview() {
     const block = answerBlocks.find((b) => b.id === mapping.answerBlockId);
     if (!block || block.regions.length === 0) return null;
 
-    const normalizedLabel = block.normalizedLabel ?? block.label ?? "A";
+    // FIX: Use the QUESTION's label, not the answer block's label.
+    // The answer block's normalizedLabel is extracted from the answer text (e.g., "Q2. ..."),
+    // which may not match the question it's mapped to. The question's label is authoritative.
+    const question = questions.find((q) => q.id === selectedQuestionId);
+    const normalizedLabel = question?.normalizedLabel ?? question?.label ?? block.normalizedLabel ?? "A";
     const confidenceSuffix =
       mapping.status === "uncertain" ? ` · ${(mapping.confidence * 100).toFixed(0)}%` : "";
+
+    // Debug logging to diagnose region mismatch
+    console.log(`[activeHighlight] selectedQuestionId=${selectedQuestionId}, mapping.answerBlockId=${mapping.answerBlockId}, block.id=${block.id}, regions=`, block.regions);
 
     return {
       regions: block.regions,
       status: mapping.status as MappingStatus,
       label: normalizedLabel + confidenceSuffix,
     };
-  }, [selectedQuestionId, mappingByQuestionId, answerBlocks]);
+  }, [selectedQuestionId, mappingByQuestionId, answerBlocks, questions]);
 
   // -------------------------------------------------------
   // Render
@@ -678,7 +692,10 @@ export function ExamReview() {
                           {q.label && (
                             <span className="font-bold text-slate-600 mr-1">{q.label}</span>
                           )}
-                          {q.text}
+                          {/* FIX: Strip the label prefix from text to avoid duplication.
+                              Gemini's questionText may already contain "Q2." prefix, so we
+                              strip it when rendering alongside the separate q.label span. */}
+                          {q.text.replace(/^Q\d+[.)\s:-]*/i, '').trim()}
                         </p>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {q.maxMarks && q.maxMarks > 0 && (

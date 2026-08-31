@@ -3,7 +3,41 @@ import type {
   CanonicalQuestion,
   QuestionAnswerMapping,
 } from "../extraction/schema.js";
-import { isStructuralHeader } from "../canonical/segmentation.js";
+import { isStructuralHeader, cleanAnswerText } from "../canonical/segmentation.js";
+
+/**
+ * Fix 2 audit: Trace label-priority behavior for the deterministic mapping engine.
+ * Stage 1 (evaluateLabelScore) is authoritative and runs BEFORE any structural/positional
+ * fallback; a matching explicit label is never overridden by a later stage. This log makes
+ * that behaviour traceable for the real document.
+ */
+function traceLabels(questions: CanonicalQuestion[], answerBlocks: CanonicalAnswerBlock[]) {
+  console.log(
+    `[mapping:labels] ${JSON.stringify({
+      questions: questions.map((q) => ({ id: q.id, normalizedLabel: q.normalizedLabel })),
+      answerBlocks: answerBlocks.map((a) => ({ id: a.id, normalizedLabel: a.normalizedLabel, textPrefix: a.text.slice(0, 40) })),
+    })}`
+  );
+}
+
+/**
+ * Fix 3 - Content-sanity safety net (defense in depth).
+ * A mapped block must look like substantive student answer content, not a document
+ * structural artifact. Returns true (keep as matched) only when the text is substantive.
+ */
+function looksLikeSubstantiveAnswer(text: string | null | undefined): boolean {
+  if (!text) return false;
+  // A pure structural header can never be a substantive answer.
+  if (isStructuralHeader(text)) return false;
+
+  // Strip a leading header line that may have been merged into an answer region.
+  const { cleanedText } = cleanAnswerText(text);
+  const tokens = cleanedText.match(/[A-Za-z][A-Za-z'-]*/g) ?? [];
+
+  // Real answers carry at least a couple of words; a bare section label / page number
+  // (or a merged block reduced to nothing) fails this minimum-substance gate.
+  return tokens.length >= 2;
+}
 
 /**
  * Stage 1: Explicit Label Matcher
@@ -91,6 +125,9 @@ export function mapQuestionsToAnswers(
   const allPairs: CandidatePair[] = [];
   const candidateMap = new Map<string, CandidatePair[]>();
 
+  // Fix 2 audit trace (label-priority visibility)
+  traceLabels(questions, answerBlocks);
+
   // Stage 1-3: Candidate Generation & Scoring
   questions.forEach((q) => {
     const qCandidates: CandidatePair[] = [];
@@ -105,7 +142,19 @@ export function mapQuestionsToAnswers(
       const structRes = evaluateStructuralScore(q, a);
 
       const labelScore = labelRes.score;
-      const structScore = structRes.score;
+      let structScore = structRes.score;
+
+      // CRITICAL: If Gemini returned high-confidence explicit match, skip structural/positional scoring
+      // This prevents positional engine from overriding correct Gemini detection
+      if (a.confidence === "high" && a.match_basis === "explicit_number") {
+        // High-confidence explicit match found by Gemini - trust it completely
+        // Skip Stage 2 (structural/positional) entirely for this answer
+        structScore = 0; // Zero out structural score so it doesn't contribute
+        // Add a reason to document this decision
+        if (structRes.reason) {
+          // We'll add this reason in the pair creation below
+        }
+      }
 
       // If both question and answer have explicit labels and they contradict (different numbers),
       // do NOT generate a naive positional candidate.
@@ -211,6 +260,16 @@ export function mapQuestionsToAnswers(
     if (margin < 0.15 && assignedPair.confidence < 0.9) {
       status = "uncertain";
       assignedPair.reasons.push(`Tight confidence margin (${margin.toFixed(2)}) against alternative candidate`);
+    }
+
+    // Fix 3 - Content-sanity safety net (defense in depth):
+    // Never let a structural artifact render as a confident green "Matched" highlight.
+    // This runs even if the label/structural stages above were fooled by a headered/merged block.
+    if (status === "matched" && !looksLikeSubstantiveAnswer(assignedPair.block.text)) {
+      status = "uncertain";
+      assignedPair.reasons.push(
+        "mapped region appears to be document structural text rather than substantive answer content — flagged for manual review"
+      );
     }
 
     mappings.push({

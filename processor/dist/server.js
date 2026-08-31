@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { healthRoute } from "./routes/health.js";
 import { extractRoute } from "./routes/extract.js";
+import { gradeRoute } from "./routes/grade.js";
 const app = new Hono();
 // CORS
 const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "*";
@@ -34,6 +35,7 @@ app.use("/extract", async (c, next) => {
 // Body limit via Hono is not multipart-aware; validation handles 20/35 MiB. Transport headroom ~40 MiB is handled by Node.
 app.route("/", healthRoute);
 app.route("/", extractRoute);
+app.route("/", gradeRoute);
 app.notFound((c) => c.json({ success: false, code: "INVALID_REQUEST", error: "Not found." }, 404));
 const port = Number(process.env.PORT ?? "10000");
 console.log(`veda-processor listening on ${port} allowedOrigin=${allowedOrigin}`);

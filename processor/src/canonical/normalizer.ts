@@ -86,12 +86,31 @@ export function extractAnswerLabel(
       /^((?:Q(?:uestion)?)?\.?\s*[1-9]\d*)\s*[.\-:)]/i,
     ];
 
+    // A bare-number prefix is only a question label when the text is NOT an
+    // enumerated sub-list. A real Q-labeled answer ("Q1. ...", "5. The mitochondria...")
+    // has ONE leading number that points at the question. A student-typed sub-list
+    // ("1. Chemical name..." / "2. Chemical formula...") uses consecutive numbers as
+    // bullet points, NOT as a question label — so we must not treat it as one.
+    const isNumberedList = (full: string): boolean => {
+      const lines = full.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) return false;
+      const numbered = lines.filter((l) => /^\d+\s*[.):-]/.test(l)).length;
+      return numbered >= 2;
+    };
+
     for (const pattern of prefixPatterns) {
       const m = firstLine.match(pattern);
       if (m) {
         const rawLabel = m[1].trim();
         const normalizedLabel = normalizeLabel(rawLabel);
         if (normalizedLabel && /^Q\d/.test(normalizedLabel)) {
+          // Guard: if the extracted prefix was a BARE number (no Q/Question marker)
+          // and the text is a numbered sub-list, this is structural enumeration, not
+          // a question label → skip visible label so we fall through to questionId.
+          const isBareNumber = /^[1-9]\d*$/.test(rawLabel);
+          if (isBareNumber && isNumberedList(answerText)) {
+            continue;
+          }
           return { rawLabel, normalizedLabel };
         }
       }
@@ -234,6 +253,9 @@ export function buildCanonicalAnswerBlocks(
       page: (ans.pageIndex ?? 0) + 1,
       regions,
       warnings,
+      detected_question_number: (ans as any).detected_question_number ?? null,
+      confidence: (ans as any).confidence ?? "low",
+      match_basis: (ans as any).match_basis ?? "none",
     });
   });
 

@@ -42,3 +42,13 @@ yarn-error.log*
 next-env.d.ts
 processor/headers.txt
 processor/.processor-dev.log
+# Environment files
+.env
+.env.local
+.env.*
+!.env.example
+
+# Logs
+*.log
+*.log.*
+processor/*.log

@@ -43,9 +43,9 @@ function UploadCard({
   const [isDragOver, setIsDragOver] = useState(false)
 
   return (
-    <div className="flex flex-col w-[386.5px] h-[205px]">
+    <div className="flex flex-col w-full md:w-[386.5px] h-[205px]">
       <label
-        className={`group relative flex w-[386.5px] h-[205px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed bg-background/95 px-6 py-6 transition-all ${error
+        className={`group relative flex w-full md:w-[386.5px] h-[205px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed bg-background/95 px-6 py-6 transition-all ${error
           ? 'border-destructive/60'
           : isDragOver
             ? 'border-orange bg-orange-soft/40'
@@ -420,8 +420,8 @@ export default function Page() {
           <div className="flex flex-col items-center text-center">
 
             {/* 1. HEADING BLOCK (w: 755px, h: 56px, gap: 12px) */}
-            <div className="w-[755px] max-w-full h-[56px] flex items-center justify-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <div className="max-w-[755px] min-h-[56px] flex w-full items-center justify-center gap-3">
+              <h1 className="text-xl font-bold tracking-tight text-foreground flex flex-wrap items-center justify-center gap-2 sm:text-2xl">
                 <span>Upload</span>
                 <span className="rounded-xl bg-orange-soft px-3 py-1 text-orange inline-block">
                   Question Paper &amp; Answer Sheets
@@ -474,7 +474,7 @@ export default function Page() {
             )}
 
             {/* 4. UPLOAD CARDS CONTAINER (w: 789px, h: 205px, gap: 16px) */}
-            <div className="w-[789px] max-w-full h-[205px] flex items-center justify-between gap-[16px]">
+            <div className="flex w-full max-w-[789px] flex-col items-center justify-center gap-[16px] md:h-[205px] md:flex-row md:justify-between">
               <UploadCard
                 type="Question Paper"
                 file={questionFile}
@@ -497,7 +497,7 @@ export default function Page() {
               disabled={!hasValidFiles}
               onClick={handleStartMapping}
               style={{ borderRadius: '64px' }}
-              className={`w-[161px] h-[44px] mt-6 flex items-center justify-center gap-2 border-2 px-5 py-3 text-xs font-bold transition-all shadow-xs ${hasValidFiles
+              className={`mx-auto w-[161px] h-[44px] mt-6 flex items-center justify-center gap-2 border-2 px-5 py-3 text-xs font-bold transition-all shadow-xs ${hasValidFiles
                 ? 'bg-foreground text-background border-foreground hover:opacity-90 cursor-pointer'
                 : 'bg-muted text-muted-foreground/70 border-muted-foreground/30 cursor-not-allowed'
                 }`}

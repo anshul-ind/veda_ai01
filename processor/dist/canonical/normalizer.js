@@ -42,12 +42,57 @@ export function extractQuestionLabel(questionText, index) {
     return { label: rawLabel, normalizedLabel };
 }
 /**
+ * Extracts the visible question label from the start of an answer text.
+ *
+ * Examples:
+ *   "Q1. The correct option is (a)..."  -> { rawLabel: "Q1", normalizedLabel: "Q1" }
+ *   "Q.5 Plaster of Paris..."           -> { rawLabel: "Q.5", normalizedLabel: "Q5" }
+ *   "5. The mitochondria..."            -> { rawLabel: "5", normalizedLabel: "Q5" }
+ *   "Q1(a) Because..."                  -> { rawLabel: "Q1(a)", normalizedLabel: "Q1A" }
+ *   "Question 3: The answer is..."      -> { rawLabel: "Question 3", normalizedLabel: "Q3" }
+ *   "The answer is NaCl"                -> null visible label, falls back to fallbackQuestionId
+ *
+ * Returns null normalizedLabel when no visible Q-label is detectable and no fallback provided.
+ */
+export function extractAnswerLabel(answerText, fallbackQuestionId) {
+    if (answerText) {
+        // Inspect only the first 80 chars of the first line for a visible label prefix
+        const firstLine = answerText.split("\n")[0].slice(0, 80).trim();
+        // Ordered from most-specific to least-specific:
+        const prefixPatterns = [
+            // Q1(a). / Q1(a): / Q.1(a) etc.
+            /^((?:Q(?:uestion)?)?\.?\s*[1-9]\d*\s*[\(.\-\s]*\s*[a-zA-Z]\s*[).]?)\s*[.\-:)\s]/i,
+            // Q1. / Q.1 / Question 1: / 1. / 1)
+            /^((?:Q(?:uestion)?)?\.?\s*[1-9]\d*)\s*[.\-:)]/i,
+        ];
+        for (const pattern of prefixPatterns) {
+            const m = firstLine.match(pattern);
+            if (m) {
+                const rawLabel = m[1].trim();
+                const normalizedLabel = normalizeLabel(rawLabel);
+                if (normalizedLabel && /^Q\d/.test(normalizedLabel)) {
+                    return { rawLabel, normalizedLabel };
+                }
+            }
+        }
+    }
+    // No visible label found - fall back to questionId
+    if (fallbackQuestionId) {
+        // "q_5" -> strip prefix -> "5" -> normalizeLabel -> "Q5"
+        const stripped = fallbackQuestionId.replace(/^[aq]_/, "");
+        const fbNorm = normalizeLabel(stripped);
+        return { rawLabel: fallbackQuestionId, normalizedLabel: fbNorm };
+    }
+    return { rawLabel: null, normalizedLabel: null };
+}
+/**
  * Converts 0-1 float region to 0-1000 integer canonical region with bounds repair & warnings
  */
 export function convertToCanonicalRegion(region, pageIndex, warnings) {
     if (!region)
         return [];
-    const page = pageIndex && pageIndex >= 0 ? pageIndex : 0;
+    // Canonical page numbers are 1-based (pageIndex 0 -> page 1)
+    const page = typeof pageIndex === "number" && pageIndex >= 0 ? pageIndex + 1 : 1;
     let x1 = Math.round(region.x * 1000);
     let y1 = Math.round(region.y * 1000);
     let x2 = Math.round((region.x + region.width) * 1000);
@@ -115,29 +160,38 @@ export function buildCanonicalQuestions(rawQuestions) {
             parentQuestionId,
             type: isSub ? "sub" : "main",
             text: q.questionText,
-            page: q.pageIndex ?? 0,
+            maxMarks: typeof q.maxMarks === "number" && !isNaN(q.maxMarks) && q.maxMarks > 0 ? q.maxMarks : 1,
+            page: (q.pageIndex ?? 0) + 1,
             regions: [],
             warnings,
         };
     });
 }
 /**
- * Transforms raw extracted answers & blocks to CanonicalAnswerBlock[]
+ * Transforms raw extracted answers & blocks to CanonicalAnswerBlock[].
+ *
+ * FIX (BUG 1): Label is now extracted from the VISIBLE TEXT of the answer
+ * (e.g. "Q1. The correct option...") before falling back to questionId or id.
+ * This ensures unmapped answers with visible "Q5." prefixes are correctly
+ * labeled even when Gemini could not determine the questionId automatically.
  */
-export function buildCanonicalAnswerBlocks(rawAnswers, rawBlocks) {
+export function buildCanonicalAnswerBlocks(rawAnswers, 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+rawBlocks) {
     const blocks = [];
     rawAnswers.forEach((ans, idx) => {
         const warnings = [];
         const regions = convertToCanonicalRegion(ans.region, ans.pageIndex, warnings);
-        const normalizedLabel = normalizeLabel(ans.questionId.replace(/^a_/, "q_")) || normalizeLabel(ans.id);
+        // Extract label from visible answer text first; fall back to questionId
+        const { rawLabel, normalizedLabel } = extractAnswerLabel(ans.answerText, ans.questionId);
         blocks.push({
             id: ans.id,
             order: idx + 1,
-            label: ans.questionId,
+            label: rawLabel ?? ans.questionId,
             normalizedLabel,
             parentAnswerBlockId: null,
             text: ans.answerText,
-            page: ans.pageIndex ?? 0,
+            page: (ans.pageIndex ?? 0) + 1,
             regions,
             warnings,
         });

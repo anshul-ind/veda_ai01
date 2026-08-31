@@ -60,68 +60,95 @@ function detectMimeType(file) {
     };
     return mimeMap[ext] || 'application/octet-stream';
 }
-// ✅ FIXED: Single-step upload - NO SECOND STEP!
+// ✅ Resumable two-step upload
+// Step 1: POST to start resumable session → returns X-Goog-Upload-URL + upload_id
+// Step 2: PUT immediately to returned URL with file bytes + finalize command
+// upload_id expires quickly, so steps happen back-to-back with no caching
 async function uploadDirect(fileBuffer, mimeType, displayName) {
     console.log(`[gemini:upload] 📤 Uploading: ${displayName} (${fileBuffer.length} bytes)`);
-    // ✅ Create multipart upload
-    const boundary = '-------' + Date.now().toString(36);
-    // Part 1: Metadata (JSON)
-    const metadata = JSON.stringify({
-        file: {
-            display_name: displayName,
-            mime_type: mimeType,
-        },
-    });
-    // Build multipart body
-    const parts = [
-        `--${boundary}\r\n`,
-        'Content-Type: application/json; charset=utf-8\r\n\r\n',
-        metadata,
-        '\r\n',
-        `--${boundary}\r\n`,
-        `Content-Type: ${mimeType}\r\n`,
-        `Content-Transfer-Encoding: base64\r\n\r\n`,
-        fileBuffer.toString('base64'),
-        '\r\n',
-        `--${boundary}--\r\n`,
-    ];
-    const body = Buffer.concat(parts.map(p => Buffer.from(p)));
-    console.log(`[gemini:upload] 🔄 Sending to Gemini API...`);
-    // ✅ SINGLE API CALL - Upload file directly (native fetch - undici caused SocketError for POST)
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
-    let response;
+    // ==========================================
+    // STEP 1: Start resumable session (POST)
+    // ==========================================
+    const startController = new AbortController();
+    const startTimeout = setTimeout(() => startController.abort(), 60000);
+    let startResponse;
     try {
-        response = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}&uploadType=multipart`, {
+        startResponse = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`, {
             method: 'POST',
             headers: {
-                'Content-Type': `multipart/related; boundary=${boundary}`,
+                'X-Goog-Upload-Protocol': 'resumable',
+                'X-Goog-Upload-Command': 'start',
+                'X-Goog-Upload-Header-Content-Length': String(fileBuffer.length),
+                'X-Goog-Upload-Header-Content-Type': mimeType,
+                'Content-Type': 'application/json',
             },
-            body: body,
-            signal: controller.signal,
+            body: JSON.stringify({ file: { display_name: displayName } }),
+            signal: startController.signal,
         });
     }
     catch (e) {
-        clearTimeout(timeout);
-        console.error(`[gemini:upload] ❌ Fetch error: ${e.message}`);
+        clearTimeout(startTimeout);
+        console.error(`[gemini:upload] ❌ Start fetch error: ${e.message}`);
         if (e.cause)
             console.error(`[gemini:upload] ❌ Cause:`, e.cause);
         if (e.stack)
             console.error(`[gemini:upload] ❌ Stack:`, e.stack?.substring(0, 500));
         throw e;
     }
-    clearTimeout(timeout);
-    const responseText = await response.text();
-    console.log(`[gemini:upload] 📡 Response status: ${response.status}`);
-    console.log(`[gemini:upload] 📡 Response: ${responseText.substring(0, 500)}...`);
-    if (!response.ok) {
-        throw new Error(`Upload failed (${response.status}): ${responseText}`);
+    clearTimeout(startTimeout);
+    const startResponseText = await startResponse.text();
+    console.log(`[gemini:upload] 📡 Start response status: ${startResponse.status}`);
+    if (!startResponse.ok) {
+        throw new Error(`Resume start failed (${startResponse.status}): ${startResponseText}`);
     }
-    const data = JSON.parse(responseText);
-    // ✅ The response already contains the file info!
+    // Capture upload URL and upload_id from response headers
+    const uploadUrl = startResponse.headers.get('X-Goog-Upload-URL');
+    const uploadId = startResponse.headers.get('X-Goog-Upload-Id');
+    if (!uploadUrl) {
+        throw new Error(`No X-Goog-Upload-URL in start response: ${startResponseText}`);
+    }
+    console.log(`[gemini:upload] ✅ Resumable session started`);
+    console.log(`[gemini:upload] 🔗 Upload URL: ${uploadUrl}`);
+    console.log(`[gemini:upload] 🆔 Upload ID: ${uploadId}`);
+    // ==========================================
+    // STEP 2: Upload file bytes via PUT (finalize included)
+    // ==========================================
+    const putController = new AbortController();
+    const putTimeout = setTimeout(() => putController.abort(), 60000);
+    let putResponse;
+    try {
+        putResponse = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+                'X-Goog-Upload-Offset': '0',
+                'X-Goog-Upload-Command': 'upload, finalize',
+                'Content-Type': mimeType,
+            },
+            body: fileBuffer,
+            signal: putController.signal,
+        });
+    }
+    catch (e) {
+        clearTimeout(putTimeout);
+        console.error(`[gemini:upload] ❌ PUT fetch error: ${e.message}`);
+        if (e.cause)
+            console.error(`[gemini:upload] ❌ Cause:`, e.cause);
+        if (e.stack)
+            console.error(`[gemini:upload] ❌ Stack:`, e.stack?.substring(0, 500));
+        throw e;
+    }
+    clearTimeout(putTimeout);
+    const putResponseText = await putResponse.text();
+    console.log(`[gemini:upload] 📡 PUT response status: ${putResponse.status}`);
+    console.log(`[gemini:upload] 📡 PUT response: ${putResponseText.substring(0, 500)}...`);
+    if (!putResponse.ok) {
+        throw new Error(`Upload PUT failed (${putResponse.status}): ${putResponseText}`);
+    }
+    // The response should contain file info with state ACTIVE
+    const data = JSON.parse(putResponseText);
     const fileInfo = data.file || data;
     if (!fileInfo.name || !fileInfo.uri) {
-        throw new Error(`Invalid response: ${responseText}`);
+        throw new Error(`Invalid response: ${putResponseText}`);
     }
     console.log(`[gemini:upload] ✅ Upload successful!`);
     console.log(`[gemini:upload] 📄 Name: ${fileInfo.name}`);
@@ -135,45 +162,55 @@ async function uploadDirect(fileBuffer, mimeType, displayName) {
 async function uploadViaCurl(fileBuffer, mimeType, displayName) {
     const { execFile } = await import('node:child_process');
     const os = await import('node:os');
-    const boundary = '-------' + Date.now().toString(36);
-    const metadata = JSON.stringify({ file: { display_name: displayName, mime_type: mimeType } });
-    const parts = [
-        `--${boundary}\r\n`,
-        'Content-Type: application/json; charset=utf-8\r\n\r\n',
-        metadata,
-        '\r\n',
-        `--${boundary}\r\n`,
-        `Content-Type: ${mimeType}\r\n`,
-        `Content-Transfer-Encoding: base64\r\n\r\n`,
-        fileBuffer.toString('base64'),
-        '\r\n',
-        `--${boundary}--\r\n`,
-    ];
-    const body = Buffer.concat(parts.map(p => Buffer.from(p)));
     const tmp = path.join(os.tmpdir(), `veda-upload-${Date.now()}.bin`);
-    fs.writeFileSync(tmp, body);
-    const url = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}&uploadType=multipart`;
-    console.log(`[gemini:upload:curl] 📤 Fallback via curl ${body.length} bytes`);
+    // Step 1: Start resumable session via curl (POST)
+    const startUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`;
+    const startCmd = ['-s', '-i', '-X', 'POST', '-H', 'X-Goog-Upload-Protocol: resumable', '-H', 'X-Goog-Upload-Command: start', '-H', `X-Goog-Upload-Header-Content-Length: ${fileBuffer.length}`, '-H', `X-Goog-Upload-Header-Content-Type: ${mimeType}`, '-H', 'Content-Type: application/json', '-d', `{"file": {"display_name": "${displayName}"}}`, startUrl];
+    console.log(`[gemini:upload:curl] 📤 Starting resumable session via curl`);
+    let startStdout = '', startStderr = '';
     return new Promise((resolve, reject) => {
-        execFile('curl', ['-s', '-X', 'POST', '-H', `Content-Type: multipart/related; boundary=${boundary}`, '--data-binary', `@${tmp}`, url], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+        execFile('curl', startCmd, { maxBuffer: 10 * 1024 * 1024 }, (err1, stdout1, stderr1) => {
             try {
                 fs.unlinkSync(tmp);
             }
             catch { }
-            if (err)
-                return reject(new Error(`curl failed: ${err.message} stderr=${stderr}`));
-            console.log(`[gemini:upload:curl] 📡 Response: ${stdout.substring(0, 500)}...`);
-            try {
-                const data = JSON.parse(stdout);
-                const fileInfo = data.file || data;
-                if (!fileInfo.name || !fileInfo.uri)
-                    return reject(new Error(`Invalid curl response: ${stdout}`));
-                console.log(`[gemini:upload:curl] ✅ Upload successful!`);
-                resolve({ name: fileInfo.name, uri: fileInfo.uri });
-            }
-            catch (e) {
-                reject(new Error(`curl parse failed: ${e.message} raw=${stdout.substring(0, 500)}`));
-            }
+            if (err1)
+                return reject(new Error(`curl start failed: ${err1.message} stderr=${stderr1}`));
+            startStdout = stdout1;
+            startStderr = stderr1;
+            // Parse X-Goog-Upload-URL from headers (curl -i includes headers)
+            const headerEnd = (stdout1 + startStderr).indexOf('\r\n\r\n');
+            const headerBlock = (stdout1 + '\n' + startStderr).substring(0, headerEnd >= 0 ? headerEnd : (stdout1 + startStderr).length);
+            const urlMatch = headerBlock.match(/X-Goog-Upload-URL: (.+)/);
+            if (!urlMatch)
+                return reject(new Error(`No upload URL in curl start response: ${stdout1}\n---stderr---\n${startStderr}`));
+            const uploadUrl = urlMatch[1];
+            const uploadIdMatch = headerBlock.match(/X-Goog-Upload-Id: (.+)/);
+            const uploadId = uploadIdMatch ? uploadIdMatch[1] : '';
+            console.log(`[gemini:upload:curl] ✅ Session started, upload URL: ${uploadUrl}`);
+            // Step 2: PUT file bytes to the returned URL with finalize
+            const body = fileBuffer;
+            const putCmd = ['-s', '-X', 'PUT', '-H', `X-Goog-Upload-Offset: 0`, '-H', 'X-Goog-Upload-Command: upload, finalize', '-H', `Content-Length: ${body.length}`, '--data-binary', `@${tmp}`, uploadUrl];
+            execFile('curl', putCmd, { maxBuffer: 10 * 1024 * 1024 }, (err2, stdout2, stderr2) => {
+                try {
+                    fs.unlinkSync(tmp);
+                }
+                catch { }
+                if (err2)
+                    return reject(new Error(`curl PUT failed: ${err2.message} stderr=${stderr2}`));
+                console.log(`[gemini:upload:curl] 📡 PUT response: ${stdout2.substring(0, 500)}...`);
+                try {
+                    const data = JSON.parse(stdout2);
+                    const fileInfo = data.file || data;
+                    if (!fileInfo.name || !fileInfo.uri)
+                        return reject(new Error(`Invalid curl response: ${stdout2}`));
+                    console.log(`[gemini:upload:curl] ✅ Upload successful!`);
+                    resolve({ name: fileInfo.name, uri: fileInfo.uri });
+                }
+                catch (e) {
+                    reject(new Error(`curl parse failed: ${e.message} raw=${stdout2.substring(0, 500)}`));
+                }
+            });
         });
     });
 }
