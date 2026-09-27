@@ -1,40 +1,64 @@
-<<<<<<< HEAD
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🤖 VedaAI
 
-## Getting Started
+### AI-powered exam evaluation and answer-sheet analysis platform.
 
-First, run the development server:
+VedaAI is an AI-powered education platform designed to help teachers evaluate student answer sheets by combining question-paper analysis, answer-sheet mapping, automated grading, and visual document inspection.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+The platform allows teachers to upload a **question paper** and a corresponding **answer sheet**, automatically process the documents, map answers to questions, and review AI-generated grading results through an interactive interface.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🌐 Live Demo
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+🚀 **[Visit VedaAI](https://veda-ai01.vercel.app/)**
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 📸 Screenshots
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 📝 Exam Document Upload
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Teachers can upload both the question paper and answer sheet to begin the evaluation workflow.
 
-## Deploy on Vercel
+![VedaAI Exam Upload](./public/assets/image-1.png)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-=======
-# veda_ai01
->>>>>>> 46553877347ca6791146c10e1aa10d9c61645072
+### 🧠 Question & Answer Mapping
+
+After processing the documents, VedaAI extracts questions and maps them against the corresponding answers.
+
+The interface allows teachers to inspect the extracted questions alongside the uploaded answer sheet.
+
+![VedaAI Question Mapping](./public/assets/image-2.png)
+
+---
+
+### 📊 AI Grading & Evaluation
+
+VedaAI provides an interactive evaluation interface where mapped answers can be reviewed along with AI-generated grading, scores, strengths, and feedback.
+
+![VedaAI AI Grading](./public/assets/image-3.png)
+
+---
+
+## 💡 What is VedaAI?
+
+Evaluating large numbers of handwritten or uploaded answer sheets can require significant manual effort.
+
+VedaAI explores how AI can assist teachers by creating a workflow that connects:
+
+```text
+Question Paper
+      ↓
+Answer Sheet
+      ↓
+Document Processing
+      ↓
+Question Extraction
+      ↓
+Answer Mapping
+      ↓
+AI Evaluation
+      ↓
+Score & Feedback
