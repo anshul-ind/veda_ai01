@@ -8,11 +8,11 @@ function runMappingTests() {
         { id: "q_5", order: 4, label: "Q5", normalizedLabel: "Q5", parentQuestionId: null, type: "main", text: "Question 5 text", maxMarks: 2, page: 1, regions: [], warnings: [] },
     ];
     const answerBlocks = [
-        { id: "a_header", order: 1, label: "Header", normalizedLabel: null, parentAnswerBlockId: null, text: "SECTION A (Multiple Choice Questions)", page: 1, regions: [], warnings: [] },
-        { id: "a_1", order: 2, label: "Q1", normalizedLabel: "Q1", parentAnswerBlockId: null, text: "Q1. The correct option is (a)", page: 1, regions: [], warnings: [] },
-        { id: "a_2", order: 3, label: "Q2", normalizedLabel: "Q2", parentAnswerBlockId: null, text: "Q2. Mitochondria", page: 1, regions: [], warnings: [] },
-        { id: "a_5", order: 4, label: "Q5", normalizedLabel: "Q5", parentAnswerBlockId: null, text: "Plaster of Paris", page: 1, regions: [], warnings: [] },
-        { id: "a_99", order: 5, label: "Q99", normalizedLabel: "Q99", parentAnswerBlockId: null, text: "Orphan answer text", page: 2, regions: [], warnings: [] },
+        { id: "a_header", order: 1, label: "Header", normalizedLabel: null, parentAnswerBlockId: null, text: "SECTION A (Multiple Choice Questions)", page: 1, regions: [], warnings: [], detected_question_number: null, confidence: "low", match_basis: "none" },
+        { id: "a_1", order: 2, label: "Q1", normalizedLabel: "Q1", parentAnswerBlockId: null, text: "Q1. The correct option is (a)", page: 1, regions: [], warnings: [], detected_question_number: 1, confidence: "high", match_basis: "explicit_number" },
+        { id: "a_2", order: 3, label: "Q2", normalizedLabel: "Q2", parentAnswerBlockId: null, text: "Q2. Mitochondria", page: 1, regions: [], warnings: [], detected_question_number: 2, confidence: "high", match_basis: "explicit_number" },
+        { id: "a_5", order: 4, label: "Q5", normalizedLabel: "Q5", parentAnswerBlockId: null, text: "Plaster of Paris", page: 1, regions: [], warnings: [], detected_question_number: null, confidence: "low", match_basis: "positional_guess" },
+        { id: "a_99", order: 5, label: "Q99", normalizedLabel: "Q99", parentAnswerBlockId: null, text: "Orphan answer text", page: 2, regions: [], warnings: [], detected_question_number: null, confidence: "low", match_basis: "none" },
     ];
     const result = mapQuestionsToAnswers(questions, answerBlocks);
     // 1. Exact match test
@@ -38,7 +38,7 @@ function runMappingTests() {
         { id: "q_1", order: 1, label: "Q1", normalizedLabel: "Q1", parentQuestionId: null, type: "main", text: "Question 1 text", maxMarks: 1, page: 1, regions: [], warnings: [] },
     ];
     const sanityBlocks = [
-        { id: "a_tiny", order: 1, label: "Q1", normalizedLabel: "Q1", parentAnswerBlockId: null, text: "Yes.", page: 1, regions: [], warnings: [] },
+        { id: "a_tiny", order: 1, label: "Q1", normalizedLabel: "Q1", parentAnswerBlockId: null, text: "Yes.", page: 1, regions: [], warnings: [], detected_question_number: null, confidence: "low", match_basis: "none" },
     ];
     const sanityResult = mapQuestionsToAnswers(sanityQuestions, sanityBlocks);
     const sanityQ1 = sanityResult.mappings.find((m) => m.questionId === "q_1");

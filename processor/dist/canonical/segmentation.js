@@ -119,10 +119,13 @@ export function segmentAnswers(rawAnswers, unmappedAnswers = [], rawBlocks = [])
             ? buildCanonicalAnswerBlocks([
                 {
                     id: u.id,
-                    questionId: u.id,
+                    questionId: null,
                     answerText: effectiveText,
                     pageIndex: u.pageIndex,
                     region: u.region,
+                    detected_question_number: null,
+                    confidence: "low",
+                    match_basis: "none",
                 },
             ])[0]?.regions ?? []
             : [];
@@ -136,6 +139,9 @@ export function segmentAnswers(rawAnswers, unmappedAnswers = [], rawBlocks = [])
             page: (u.pageIndex ?? 0) + 1,
             regions,
             warnings,
+            detected_question_number: null,
+            confidence: "low",
+            match_basis: "none",
         });
     });
     // rawBlocks (Gemini-declared blocks) are currently not turned into canonical blocks by

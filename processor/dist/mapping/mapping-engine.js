@@ -103,7 +103,18 @@ export function mapQuestionsToAnswers(questions, answerBlocks) {
             const labelRes = evaluateLabelScore(q, a);
             const structRes = evaluateStructuralScore(q, a);
             const labelScore = labelRes.score;
-            const structScore = structRes.score;
+            let structScore = structRes.score;
+            // CRITICAL: If Gemini returned high-confidence explicit match, skip structural/positional scoring
+            // This prevents positional engine from overriding correct Gemini detection
+            if (a.confidence === "high" && a.match_basis === "explicit_number") {
+                // High-confidence explicit match found by Gemini - trust it completely
+                // Skip Stage 2 (structural/positional) entirely for this answer
+                structScore = 0; // Zero out structural score so it doesn't contribute
+                // Add a reason to document this decision
+                if (structRes.reason) {
+                    // We'll add this reason in the pair creation below
+                }
+            }
             // If both question and answer have explicit labels and they contradict (different numbers),
             // do NOT generate a naive positional candidate.
             const hasConflictingExplicitLabels = q.normalizedLabel &&

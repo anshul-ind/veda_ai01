@@ -1,4 +1,5 @@
 import { buildCanonicalQuestions, convertToCanonicalRegion, normalizeLabel } from "./normalizer.js";
+import { extractAnswerLabel } from "./normalizer.js";
 function runNormalizerTests() {
     console.log("=== RUNNING NORMALIZER UNIT TESTS ===");
     // 1. Label Normalization Tests
@@ -44,6 +45,17 @@ function runNormalizerTests() {
     console.assert(canonicalQs[1].parentQuestionId === "q_1", "Parent question linkage failed");
     console.assert(canonicalQs[1].maxMarks === 1, "Q2 maxMarks preservation failed");
     console.log("✅ Canonical question building tests passed");
+    // 4. Fix 2 - Answer label extraction edge case: a numbered sub-list ("1. Chemical name",
+    //    "2. Chemical formula") must NOT be misread as a question label "Q1". It should fall
+    //    back to the authoritative questionId (q_5 -> Q5).
+    const subListExtract = extractAnswerLabel("1. Chemical name: Calcium Sulphate Hemihydrate.\n2. Chemical formula: CaSO4 \u00b7 \u00bd H2O.", "q_5");
+    console.assert(subListExtract.normalizedLabel === "Q5", `Numbered sub-list must fall back to questionId as Q5, got: ${subListExtract.normalizedLabel}`);
+    // A real Q-labeled answer (with a Q marker or single bare number) must still extract its label.
+    const qLabeled = extractAnswerLabel("Q1. The correct option is (a). NaOH + HCl \u2192 NaCl + H2O");
+    console.assert(qLabeled.normalizedLabel === "Q1", `Visible Q-label must still extract to Q1, got: ${qLabeled.normalizedLabel}`);
+    const bareSingle = extractAnswerLabel("5. The mitochondria is the site.");
+    console.assert(bareSingle.normalizedLabel === "Q5", `Single bare number should map to Q5, got: ${bareSingle.normalizedLabel}`);
+    console.log("✅ Fix 2 answer-label sub-list guard tests passed");
     console.log("=== ALL NORMALIZER TESTS PASSED ===");
 }
 runNormalizerTests();

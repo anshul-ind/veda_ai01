@@ -81,6 +81,11 @@ extractRoute.post("/extract", async (c) => {
         const questionById = new Map(qParsed.data.questions.map((question) => [question.id, question]));
         const answers = [];
         for (const answer of aParsed.data.answers) {
+            // questionId can be null when Gemini couldn't determine the mapping
+            if (answer.questionId === null) {
+                warnings.push(`Excluded answer ${answer.id}: no question mapping detected (confidence=${answer.confidence}, match_basis=${answer.match_basis}).`);
+                continue;
+            }
             const question = questionById.get(answer.questionId);
             if (!question) {
                 warnings.push(`Excluded answer ${answer.id}: questionId ${answer.questionId} does not exist.`);
